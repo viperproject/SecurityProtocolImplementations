@@ -1,0 +1,15 @@
+package common
+
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/dh/common/library"
+
+
+ghost
+requires tm.gamma(t) == tm.gamma(tm.sign(tm.tuple5(tm.integer32(Msg2Tag), idB, idA, tm.exp(tm.generator(), x), someY), skB))
+ensures  t == tm.sign(tm.tuple5(tm.integer32(Msg2Tag), idB, idA, tm.exp(tm.generator(), x), Y), skB)
+func patternRequirement2(idA, idB, skB, x, someY, t tm.Term) (Y tm.Term)
+
+ghost
+requires tm.gamma(t) == tm.gamma(tm.sign(tm.tuple5(tm.integer32(Msg3Tag), idA, idB, tm.exp(tm.generator(), y), X), skA));
+ensures  t == tm.sign(tm.tuple5(tm.integer32(Msg3Tag), idA, idB, tm.exp(tm.generator(), y), X), skA);
+func patternRequirement3(idA, idB, skA, y, X, t tm.Term);

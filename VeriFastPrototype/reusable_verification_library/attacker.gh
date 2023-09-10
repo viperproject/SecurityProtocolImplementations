@@ -1,0 +1,17 @@
+#ifndef ATTACKER
+#define ATTACKER
+
+
+#include "term.gh"
+#include "trace_entry.gh"
+#include "trace_entry_helpers.gh"
+
+fixpoint list<Term> attackerKnowledge(trace<EventParams> tr) {
+    return append(append(getTermsMadePublic(tr), getMessagePayloads(tr)), getPublicTerms(tr));
+}
+
+fixpoint bool attackerKnows<t>(trace<EventParams> tr, Term term) {
+    return mem(term, attackerKnowledge(tr));
+}
+
+#endif

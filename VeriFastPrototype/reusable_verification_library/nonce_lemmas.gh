@@ -1,0 +1,18 @@
+#ifndef NONCE_LEMMAS
+#define NONCE_LEMMAS
+
+#include "trace_entry.gh"
+#include "trace_invariant.gh"
+
+// lemma that proves that having 2 instances of `NonceUniqueResource` results in a contradiction
+lemma void nonceUniqueContradiction(Term t);
+    requires NonceUniqueResource(t) &*& NonceUniqueResource(t);
+    ensures false;
+
+lemma void nonceUnique(trace<EventParams> tr, Term t, Label l, int i, int j, PkePred pkePred);
+    requires valid_trace(tr, pkePred) &*&
+        nonceAt(tr, t, l, i) == true &*&
+        nonceAt(tr, t, l, j) == true;
+    ensures valid_trace(tr, pkePred) &*& i == j;
+
+#endif

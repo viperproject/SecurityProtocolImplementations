@@ -1,0 +1,88 @@
+#ifndef BYTES
+#define BYTES
+
+#include "term.gh"
+
+
+/*---- Contains definition for the gamma function that maps terms to bytes -----*/
+fixpoint list<char> gamma(Term t);
+fixpoint Term oneTerm(list<char> bytes);
+
+// constructors
+fixpoint list<char> integerB(int i);
+fixpoint list<char> stringB(list<char> str);
+fixpoint list<char> encryptB(list<char> publicKey, list<char> plaintext);
+fixpoint list<char> hashB(list<char> input);
+fixpoint list<char> publicKeyB(list<char> b); 
+fixpoint list<char> tuple2B(list<char> b1, list<char> b2);
+fixpoint list<char> tuple3B(list<char> b1, list<char> b2, list<char> b3);
+fixpoint list<char> tuple4B(list<char> b1, list<char> b2, list<char> b3, list<char> b4);
+
+// deconstructors
+fixpoint list<char> getFirstB(list<char> b);
+fixpoint list<char> getSecondB(list<char> b);
+fixpoint list<char> getThirdB(list<char> b);
+fixpoint list<char> getForthB(list<char> b);
+fixpoint list<char> decryptB(list<char> sk, list<char> plaintext);
+
+lemma_auto void tuple2BDeconstruction(list<char> b1, list<char> b2);
+    requires true;
+    ensures  getFirstB(tuple2B(b1, b2)) == b1 &&
+        getSecondB(tuple2B(b1, b2)) == b2;
+
+lemma_auto void tuple3BDeconstruction(list<char> b1, list<char> b2, list<char> b3);
+    requires true;
+    ensures  getFirstB(tuple3B(b1, b2, b3)) == b1 &&
+        getSecondB(tuple3B(b1, b2, b3)) == b2 &&
+        getThirdB(tuple3B(b1, b2, b3)) == b3;
+
+lemma_auto void tuple4BDeconstruction(list<char> b1, list<char> b2, list<char> b3, list<char> b4);
+    requires true;
+    ensures  getFirstB(tuple4B(b1, b2, b3, b4)) == b1 &&
+        getSecondB(tuple4B(b1, b2, b3, b4)) == b2 &&
+        getThirdB(tuple4B(b1, b2, b3, b4)) == b3 &&
+        getForthB(tuple4B(b1, b2, b3, b4)) == b4;
+
+// decryption with correct key
+lemma_auto void decryptBDeconstruction(list<char> sk, list<char> plaintext);
+    requires true;
+    ensures  decryptB(sk, encryptB(publicKeyB(sk), plaintext)) == plaintext;
+
+lemma_auto void totality(list<char> bytes);
+    requires true;
+    ensures gamma(oneTerm(bytes)) == bytes;
+
+// homomorphism
+lemma_auto void gammaHomomorphismInteger(int i);
+    requires true;
+    ensures gamma(integer(i)) == integerB(i);
+
+lemma_auto void gammaHomomorphismString(list<char> s);
+    requires true;
+    ensures gamma(stringTerm(s)) == stringB(s);
+
+lemma_auto void gammaHomomorphismEncrypt(Term pk, Term plaintext);
+    requires true;
+    ensures gamma(encrypt(pk, plaintext)) == encryptB(gamma(pk), gamma(plaintext));
+
+lemma_auto void gammaHomomorphismHash(Term t);
+    requires true;
+    ensures gamma(hash(t)) == hashB(gamma(t));
+
+lemma_auto void gammaHomomorphismPublicKey(Term t);
+    requires true;
+    ensures gamma(publicKey(t)) == publicKeyB(gamma(t));
+
+lemma_auto void gammaHomomorphismTuple2(Term t1, Term t2);
+    requires true;
+    ensures gamma(tuple2(t1, t2)) == tuple2B(gamma(t1), gamma(t2));
+
+lemma_auto void gammaHomomorphismTuple3(Term t1, Term t2, Term t3);
+    requires true;
+    ensures gamma(tuple3(t1, t2, t3)) == tuple3B(gamma(t1), gamma(t2), gamma(t3));
+
+lemma_auto void gammaHomomorphismTuple4(Term t1, Term t2, Term t3, Term t4);
+    requires true;
+    ensures gamma(tuple4(t1, t2, t3, t4)) == tuple4B(gamma(t1), gamma(t2), gamma(t3), gamma(t4));
+
+#endif

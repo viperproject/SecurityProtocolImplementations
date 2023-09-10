@@ -1,0 +1,9 @@
+#ifndef SECRECY_LABEL
+#define SECRECY_LABEL
+
+// since this is a prototypical library, we currently only support 
+// Public and Readers(...) as secrecy labels
+
+inductive Label = Public | Readers (list<int> readers);
+
+#endif

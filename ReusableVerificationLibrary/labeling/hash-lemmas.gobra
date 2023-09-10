@@ -1,0 +1,20 @@
+package labeling
+
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+
+
+ghost
+decreases
+requires ctx.Props()
+requires ctx.IsLabeledRelaxed(snapshot, firstT, firstL)
+requires ctx.IsLabeledRelaxed(snapshot, secondT, secondL)
+ensures  ctx.IsLabeledPrecise(snapshot, tm.hash(tm.tuple2(firstT, secondT)), label.Public())
+func (ctx LabelingContext) ApplyHash2Tuple(snapshot tr.TraceEntry, firstT, secondT tm.Term, firstL, secondL label.SecrecyLabel) {
+    firstActualL := ctx.GetLabel(firstT)
+    secondActualL := ctx.GetLabel(secondT)
+    inputT := tm.tuple2(firstT, secondT)
+    assert ctx.IsValid(snapshot, inputT)
+    assert ctx.nestedMeet(inputT, getTupleSeq(inputT), 0) == label.Meet(firstActualL, secondActualL)
+}

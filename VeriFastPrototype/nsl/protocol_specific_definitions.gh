@@ -1,0 +1,76 @@
+#ifndef PROTOCOL_SPECIFIC_DEFINITIONS
+#define PROTOCOL_SPECIFIC_DEFINITIONS
+
+#include "labeling.gh"
+#include "nsl_event_types.gh"
+#include "nsl_pke_pred.gh"
+#include "trace_entry.gh"
+#include "trace_entry_helpers.gh"
+
+
+fixpoint Term uniqueHelper(EventParams p) {
+    switch(p) {
+        case InitiateParams(a, b, na): return na;
+        case RespondParams(a, b, na, nb): return nb; 
+        case FinishIParams(a, b, na, nb): return na;
+        case FinishRParams(a, b, na, nb): return nb;
+    }
+}
+
+fixpoint bool event_pure_pred_helper(EventParams params, int type, int principal, trace<EventParams> tr) {
+    switch (params) { 
+        case InitiateParams(a, b, na):
+            return principal == a;
+        case RespondParams(a, b, na, nb):
+            return principal == b;
+        case FinishIParams(a, b, na, nb):
+            return principal == a &&
+                isLabeled(na, tr, Readers(cons(principal, cons(b, nil))), pkePred) &&
+                (isLabeled(nb, tr, Readers(cons(principal, cons(b, nil))), pkePred) ||
+                    isPublishable(tr, nb, pkePred)) &&
+                (containsCorruptId(getCorruptIds(tr), cons(principal, cons(b, nil))) ||
+                    eventOccurs(tr, b, newEvent(RESPOND, RespondParams(principal, b, na, nb))));
+        case FinishRParams(a, b, na, nb):
+            return principal == b &&
+                eventOccurs(tr, principal, newEvent(RESPOND, RespondParams(a, principal, na, nb))) &&
+                (containsCorruptId(getCorruptIds(tr), cons(a, cons(principal, nil))) ||
+                    eventOccurs(tr, a, newEvent(FINISHI, FinishIParams(a, principal, na, nb))));
+    }
+}
+
+// bool isUnique(int type) UNIQUE
+#define UNIQUE {\
+    return type == INITIATE || type == RESPOND || type == FINISHI || type == FINISHR;\
+}
+
+// bool eventConsistency(EventParams t, int type) CONSISTENCY
+#define CONSISTENCY {\
+    switch (t) {\
+        case InitiateParams(a, b, na):\
+            return type == INITIATE;\
+        case RespondParams(a, b, na, nb):\
+            return type == RESPOND;\
+        case FinishIParams(a, b, na, nb):\
+            return type == FINISHI;\
+        case FinishRParams(a, b, na, nb):\
+            return type == FINISHR;\
+    }\
+}
+
+// Term eventUniquenessWitness<t>(EventADT<t> e) UNIQUE_WITNESS
+#define UNIQUE_WITNESS {\
+    switch (e) {\
+        case newEvent(type, params):\
+            return uniqueHelper(params);\
+    }\
+}
+
+//bool event_pure_pred(EventADT<EventParams> e, int principal, trace<EventParams> tr) EVENT_PRED
+#define EVENT_PRED {\
+    switch (e) {\
+        case newEvent(type, params):\
+            return event_pure_pred_helper(params, type, principal, tr);\
+    }\
+}
+
+#endif

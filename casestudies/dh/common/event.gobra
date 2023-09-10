@@ -1,0 +1,52 @@
+package common
+
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+
+
+const Initiate = EventType(1)
+const Respond = EventType(2)
+const FinishI = EventType(3)
+const FinishR = EventType(4)
+
+type InitiateParams struct {
+	a p.Principal
+	b p.Principal
+	x tm.Term
+	X tm.Term
+}
+
+type RespondParams struct {
+	a p.Principal
+	b p.Principal
+	// note that we use `X` here because the responder does not
+	// obtain any knowledge whether the first message is a valid
+	// DH half-key or not:
+	X tm.Term
+	y tm.Term
+	sharedSecret tm.Term
+}
+
+type FinishIParams struct {
+	a p.Principal
+	b p.Principal
+	x tm.Term
+	y tm.Term
+	sharedSecret tm.Term
+}
+
+type FinishRParams struct {
+	a p.Principal
+	b p.Principal
+	x tm.Term
+	y tm.Term
+	sharedSecret tm.Term
+}
+
+// optional declaration of subtypes:
+InitiateParams implements EventParams
+RespondParams implements EventParams
+FinishIParams implements EventParams
+FinishRParams implements EventParams

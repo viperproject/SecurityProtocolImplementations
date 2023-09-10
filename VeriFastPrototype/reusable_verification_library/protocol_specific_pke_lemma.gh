@@ -1,0 +1,20 @@
+#ifndef PROTOCOL_SPECIFIC_PKE_LEMMA
+#define PROTOCOL_SPECIFIC_PKE_LEMMA
+
+#include "protocol_specific_pke_definition.gh"
+#include "term.gh"
+#include "trace_entry.gh"
+#include "trace_entry_helpers.gh"
+
+// `pkePred` defines protocol-specific properties for public-key encryptions
+// performed by honest participants. The following lemma must be proven for
+// each protocol to show that `pkePred` satisfies monotonicity.
+// Since `pkePred` is passed around as a parameter, the `PkeCtxt` predicate
+// allows to bind the parameter to a particular fixpoint definition, simply
+// by instantiating the `PkeCtxt` predicate with a suitable body.
+
+lemma void pkeMonotonic(Trace t1, Trace t2, Term ptxt, Term pk, PkePred pkePred);
+    requires isSuffix(t1, t2) == true && pkePred(t1, ptxt, pk) == true &*& PkeCtxt(pkePred);
+    ensures pkePred(t2,  ptxt, pk) == true &*& PkeCtxt(pkePred);
+
+#endif

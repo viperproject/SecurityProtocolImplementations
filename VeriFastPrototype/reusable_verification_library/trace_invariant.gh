@@ -1,0 +1,69 @@
+#ifndef TRACE_INVARIANT
+#define TRACE_INVARIANT
+
+#include "ghost_cells.gh"
+#include "event_functions.gh"
+#include "labeling.gh"
+#include "term.gh"
+#include "trace_entry.gh"
+
+
+fixpoint bool publicInv(list<Term> root_terms, trace<EventParams> y, PkePred pkePred) {
+    switch (root_terms) {
+        case nil: return true;
+        case cons(x, xs): return isPublishable(y, x, pkePred) && publicInv(xs, y, pkePred);
+    }
+}
+
+// The next set of functions ensure that every unique event has
+// full permission to a resource testimonifying its uniqueness.
+fixpoint int getCellIdEvent(Term witness, int type);
+
+predicate EventUniqueResource<t>(Term nonce, int type) =
+    isUnique(type) ? ghost_cell(getCellIdEvent(nonce, type), _) : true;
+
+// Event predicate which says that the pure event fixpoint is true, and
+// if the event is unique, then there is a unique resource for this event type.
+predicate event_pred(int principal, ParameterizedEvent e, trace<EventParams> tr) =
+    switch (e) {
+        case newEvent(type, params):
+            return event_pure_pred_consistent(e, principal, tr) == true &*&
+                EventUniqueResource(eventUniquenessWitness(e), type);
+    };
+
+lemma void eventPredMonotonic<t>(trace<EventParams> t1, trace<EventParams> t2, int principal, ParameterizedEvent e, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& event_pred(principal, e, t1) &*& PkeCtxt(pkePred);
+    ensures event_pred(principal, e, t2) &*& PkeCtxt(pkePred);
+
+fixpoint bool messageInv<t>(int to, int from, Term term, trace<EventParams> t, PkePred pkePred) {
+    return isPublishable(t, term, pkePred);
+}
+
+lemma void messageInvMonotonic<t>(trace<EventParams> t1, trace<EventParams> t2, int to, int from, Term term, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& messageInv(to, from, term,t1, pkePred) == true &*& PkeCtxt(pkePred);
+    ensures  messageInv(to, from, term,t2, pkePred) == true &*& PkeCtxt(pkePred);
+
+// The next set of function provide a unique resource for a each nonce.
+// getCellId() gives an integer and NonceUniqueResource() says that
+// there is a ghost_cell with that integer
+fixpoint int getCellId(Term t);
+
+predicate NonceUniqueResource(Term t) =
+    ghost_cell(getCellId(t), _);
+
+fixpoint bool madePublicInv(trace<EventParams> tr, Term term, PkePred pkePred) {
+    return isPublishable(tr, term, pkePred);
+}
+
+predicate valid_trace(trace<EventParams> tr, PkePred pkePred) =
+    switch (tr) {
+        case root(root_terms): return publicInv(root_terms, root(root_terms), pkePred) == true; 
+        case makeEvent(t0, pr, e): return event_pred(pr, e, t0) &*& valid_trace(t0, pkePred);
+        case makeCorrupt(t0, id): return valid_trace(t0, pkePred);
+        case makeMessage(t0,to,from,term): return messageInv(to, from, term, t0, pkePred) == true &*& valid_trace(t0, pkePred);
+        case makeDropMessage(t0, to, from, term): return messageInv(to, from, term, t0, pkePred) == true &*& valid_trace(t0, pkePred);
+        case makeNonce(t0, term): return isNonce(term) == true &*& NonceUniqueResource(term) &*& valid_trace(t0, pkePred);
+        case makePublic(t0, term): return madePublicInv(t0, term, pkePred) == true &*& valid_trace(t0, pkePred) ;
+    };
+
+#endif

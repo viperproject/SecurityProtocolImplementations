@@ -1,0 +1,13 @@
+#ifndef PROTOCOL_SPECIFIC_EVENT_PARAMS
+#define PROTOCOL_SPECIFIC_EVENT_PARAMS
+
+#include "term.gh"
+
+// inductive EventParams = EVENT_PARAMS
+#define EVENT_PARAMS \
+    | InitiateParams(int a, int b, Term na)\
+    | RespondParams(int a, int b, Term na, Term nb)\
+    | FinishIParams(int a, int b, Term na, Term nb)\
+    | FinishRParams(int a, int b, Term na, Term nb);
+
+#endif

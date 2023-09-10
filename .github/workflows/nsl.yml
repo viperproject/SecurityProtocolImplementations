@@ -1,0 +1,82 @@
+name: Verification of NSL Case Study
+
+on:
+  push:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/viperproject/gobra@sha256:0e7419455a3648d006e8a9957380e94c1a8e52d2d4b1ce2425af852dc275fb29 # Gobra commit f21fe70
+    steps:
+      - name: Install prerequisites
+        run: apt-get update && apt-get install -y git wget jq
+
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install Go
+        run: |
+          mkdir tmp
+          cd tmp
+          wget --quiet https://go.dev/dl/go1.17.3.linux-amd64.tar.gz
+          rm -rf /usr/local/go && tar -C /usr/local -xzf go1.17.3.linux-amd64.tar.gz
+          cd ../
+          rm -rf tmp
+          # add go to path
+          echo "/usr/local/go/bin" >> $GITHUB_PATH
+
+      - name: Point Go to repo copy
+        run: go mod edit -replace github.com/viperproject/ReusableProtocolVerificationLibrary=$GITHUB_WORKSPACE/ReusableVerificationLibrary
+        working-directory: casestudies/nsl
+
+      - name: Compile NSL initiator & responder
+        run: ./compile.sh
+        working-directory: casestudies/nsl
+
+      - name: Execute NSL initiator & responder
+        run: ./nsl
+        working-directory: casestudies/nsl
+
+      - name: Setup verification of NSL
+        run: |
+          ./load-modules.sh "$GITHUB_WORKSPACE/.modules"
+          mkdir -p $GITHUB_WORKSPACE/.modules/github.com/viperproject
+        working-directory: casestudies/nsl
+
+      - name: Link Reusable Verification Library
+        run: ln -s $GITHUB_WORKSPACE/ReusableVerificationLibrary .modules/github.com/viperproject/ReusableProtocolVerificationLibrary
+
+      - name: Verify NSL initiator role 1
+        run: |
+          mkdir -p .gobra
+          gobraJar="/gobra/gobra.jar"
+          additionalGobraArgs="-I $GITHUB_WORKSPACE/casestudies/nsl/.verification/precedence -I $GITHUB_WORKSPACE/.modules --module github.com/viperproject/ProtocolVerificationCaseStudies/nsl --parallelizeBranches"
+          java -Xss128m -jar $gobraJar --recursive -I ./ $additionalGobraArgs --includePackages initiator
+        working-directory: casestudies/nsl
+
+      - name: Verify NSL initiator role 2
+        run: |
+          mkdir -p .gobra
+          gobraJar="/gobra/gobra.jar"
+          additionalGobraArgs="-I $GITHUB_WORKSPACE/casestudies/nsl/.verification/precedence -I $GITHUB_WORKSPACE/.modules --module github.com/viperproject/ProtocolVerificationCaseStudies/nsl --parallelizeBranches"
+          java -Xss128m -jar $gobraJar --recursive -I ./ $additionalGobraArgs --includePackages initiator2
+        working-directory: casestudies/nsl
+
+      - name: Verify NSL responder role
+        run: |
+          mkdir -p .gobra
+          gobraJar="/gobra/gobra.jar"
+          additionalGobraArgs="-I $GITHUB_WORKSPACE/casestudies/nsl/.verification/precedence -I $GITHUB_WORKSPACE/.modules --module github.com/viperproject/ProtocolVerificationCaseStudies/nsl --parallelizeBranches"
+          java -Xss128m -jar $gobraJar --recursive -I ./ $additionalGobraArgs --includePackages responder
+        working-directory: casestudies/nsl
+
+      - name: Verify NSL trace invariants & main package
+        run: |
+          mkdir -p .gobra
+          gobraJar="/gobra/gobra.jar"
+          additionalGobraArgs="-I $GITHUB_WORKSPACE/casestudies/nsl/.verification/precedence -I $GITHUB_WORKSPACE/.modules --module github.com/viperproject/ProtocolVerificationCaseStudies/nsl --parallelizeBranches"
+          # verify packages located in the current directory and in `common`:
+          java -Xss128m -jar $gobraJar --directory ./ common -I ./ $additionalGobraArgs
+        working-directory: casestudies/nsl

@@ -1,0 +1,370 @@
+package common
+
+import arb "github.com/viperproject/ReusableProtocolVerificationLibrary/arbitrary"
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+import tri "github.com/viperproject/ReusableProtocolVerificationLibrary/traceinvariant"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/usagecontext"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/dh/common/library"
+
+
+const DhKey = "DH Key"
+const DhNonce = "DH Nonce"
+
+type DhContext struct {
+    usage UsageContext
+}
+// the following line is just a sanity check that DhContext is indeed a subtype 
+// of TraceContext (even though the implementation proof can be completely inferred):
+DhContext implements tri.TraceContext {}
+
+// TODO make ghost
+decreases
+ensures res.Props()
+pure func GetDhContext() (res DhContext) {
+    return DhContext{ DhUsageContext{ } }
+}
+
+ghost
+decreases
+pure func GetDhLabeling() LabelingContext {
+    return GetLabelingContext(DhUsageContext{ })
+}
+
+ghost
+decreases
+pure func (ctx DhContext) isInitiate(event ev.Event) bool {
+    return event.typ == Initiate
+}
+
+ghost
+decreases
+pure func (ctx DhContext) isRespond(event ev.Event) bool {
+    return event.typ == Respond
+}
+
+ghost
+decreases
+pure func (ctx DhContext) isFinishI(event ev.Event) bool {
+    return event.typ == FinishI
+}
+
+ghost
+decreases
+pure func (ctx DhContext) isFinishR(event ev.Event) bool {
+    return event.typ == FinishR
+}
+
+ghost
+decreases
+requires ctx.isInitiate(event)
+requires ctx.EventConsistency(event)
+pure func (ctx DhContext) getInitiateParams(event ev.Event) InitiateParams {
+    return (event.params).(InitiateParams)
+}
+
+ghost
+decreases
+requires ctx.isRespond(event)
+requires ctx.EventConsistency(event)
+pure func (ctx DhContext) getRespondParams(event ev.Event) RespondParams {
+    return (event.params).(RespondParams)
+}
+
+ghost
+decreases
+requires ctx.isFinishI(event)
+requires ctx.EventConsistency(event)
+pure func (ctx DhContext) getFinishIParams(event ev.Event) FinishIParams {
+    return (event.params).(FinishIParams)
+}
+
+ghost
+decreases
+requires ctx.isFinishR(event)
+requires ctx.EventConsistency(event)
+pure func (ctx DhContext) getFinishRParams(event ev.Event) FinishRParams {
+    return (event.params).(FinishRParams)
+}
+
+ghost
+decreases
+pure func (ctx DhContext) Props() bool {
+    return ctx.usage != nil && ctx.usage == DhUsageContext{ }
+}
+
+pred (ctx DhContext) eventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry) {
+    ctx.pureEventInv(principal, event, prev) &&
+    (ctx.isInitiate(event) ==> GetDhLabeling().NonceForEventIsUnique(ctx.getInitiateParams(event).x, event.typ)) &&
+    (ctx.isRespond(event) ==> GetDhLabeling().NonceForEventIsUnique(ctx.getRespondParams(event).y, event.typ)) &&
+    (ctx.isFinishI(event) ==> GetDhLabeling().NonceForEventIsUnique(ctx.getFinishIParams(event).x, event.typ)) &&
+    (ctx.isFinishR(event) ==> GetDhLabeling().NonceForEventIsUnique(ctx.getFinishRParams(event).y, event.typ))
+}
+
+ghost
+decreases
+pure func (ctx DhContext) EventConsistency(event ev.Event) bool {
+    return (ctx.isInitiate(event) ==> typeOf(event.params) == InitiateParams) &&
+        (ctx.isRespond(event) ==> typeOf(event.params) == RespondParams) &&
+        (ctx.isFinishI(event) ==> typeOf(event.params) == FinishIParams) &&
+        (ctx.isFinishR(event) ==> typeOf(event.params) == FinishRParams)
+}
+
+ghost
+decreases
+pure func (ctx DhContext) pureEventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry) bool {
+    return ctx.Props() &&
+        ctx.EventConsistency(event) &&
+        (ctx.isInitiate(event) ==> principal == ctx.getInitiateParams(event).a) &&
+        (ctx.isRespond(event) ==> principal == ctx.getRespondParams(event).b) &&
+        (ctx.isFinishI(event) ==> principal == ctx.getFinishIParams(event).a &&
+            GetDhLabeling().IsLabeled(prev, ctx.getFinishIParams(event).x, label.Readers(set[p.Id]{ p.principalId(principal) })) &&
+            (tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.principalId(ctx.getFinishIParams(event).b) }) ||
+                (GetDhLabeling().IsLabeled(prev, ctx.getFinishIParams(event).y, label.Readers(set[p.Id]{ p.principalId(ctx.getFinishIParams(event).b) })) &&
+                    GetDhLabeling().IsLabeled(prev, ctx.getFinishIParams(event).sharedSecret, label.Join(label.Readers(set[p.Id]{ p.principalId(principal) }), label.Readers(set[p.Id]{ p.principalId(ctx.getFinishIParams(event).b) }))) &&
+                    prev.eventOccurs(ctx.getFinishIParams(event).b, ev.NewEvent(Respond, RespondParams{ principal, ctx.getFinishIParams(event).b, tm.exp(tm.generator(), ctx.getFinishIParams(event).x), ctx.getFinishIParams(event).y, ctx.getFinishIParams(event).sharedSecret }))))) &&
+        (ctx.isFinishR(event) ==> principal == ctx.getFinishRParams(event).b &&
+            (exists X tm.Term :: { RespondParams{ ctx.getFinishRParams(event).a, principal, X, ctx.getFinishRParams(event).y, ctx.getFinishRParams(event).sharedSecret } } prev.eventOccurs(principal, ev.NewEvent(Respond, RespondParams{ ctx.getFinishRParams(event).a, principal, X, ctx.getFinishRParams(event).y, ctx.getFinishRParams(event).sharedSecret }))) &&
+            ( // corruption has happened or FinishI event occurs:
+                tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.principalId(ctx.getFinishRParams(event).a), p.principalId(principal) }) ||
+                prev.eventOccurs(ctx.getFinishRParams(event).a, ev.NewEvent(FinishI, FinishIParams{ ctx.getFinishRParams(event).a, principal, ctx.getFinishRParams(event).x, ctx.getFinishRParams(event).y, ctx.getFinishRParams(event).sharedSecret }))))
+}
+
+ghost
+decreases
+requires ctx.pureEventInv(principal, event, prev)
+ensures  ctx.EventConsistency(event)
+func (ctx DhContext) eventInvImpliesConsistency(principal p.Principal, event ev.Event, prev tr.TraceEntry) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx DhContext) IsUnique(typ ev.EventType) bool {
+    return typ == Initiate || typ == Respond || typ == FinishI || typ == FinishR
+}
+
+ghost
+decreases
+requires ctx.IsUnique(event.typ)
+requires ctx.EventConsistency(event)
+pure func (ctx DhContext) UniquenessWitness(event ev.Event) tm.Term {
+    return ctx.isInitiate(event) ?
+        ctx.getInitiateParams(event).x :
+        ctx.isRespond(event) ?
+            ctx.getRespondParams(event).y :
+            ctx.isFinishI(event) ? 
+                ctx.getFinishIParams(event).x :
+                ctx.getFinishRParams(event).y
+}
+
+ghost
+decreases
+requires ctx.Props()
+requires ctx.IsUnique(event.typ)
+requires ctx.eventInv(principal, event, prev)
+ensures  ctx.EventConsistency(event)
+ensures  nonce == ctx.UniquenessWitness(event)
+ensures  GetDhLabeling().NonceForEventIsUnique(nonce, event.typ)
+ensures  GetDhLabeling().NonceForEventIsUnique(nonce, event.typ) --* ctx.eventInv(principal, event, prev)
+func (ctx DhContext) isUniqueImpliesUniqueResource(principal p.Principal, event ev.Event, prev tr.TraceEntry) (nonce tm.Term) {
+    unfold ctx.eventInv(principal, event, prev)
+    nonce = ctx.UniquenessWitness(event)
+    package GetDhLabeling().NonceForEventIsUnique(nonce, event.typ) --* ctx.eventInv(principal, event, prev) {
+        fold ctx.eventInv(principal, event, prev)
+    }
+}
+
+ghost
+decreases
+requires noPerm < p && p <= writePerm
+requires acc(ctx.eventInv(principal, event, prev), p)
+ensures  acc(ctx.eventInv(principal, event, prev), p)
+ensures  ctx.pureEventInv(principal, event, prev)
+func (ctx DhContext) getPureEventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry, p perm) {
+    assert unfolding acc(ctx.eventInv(principal, event, prev), p) in true
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.eventInv(principal, event, t1)
+ensures  ctx.eventInv(principal, event, t2)
+func (ctx DhContext) eventInvMonotonic(principal p.Principal, event ev.Event, t1, t2 tr.TraceEntry) {
+    unfold ctx.eventInv(principal, event, t1)
+    ctx.pureEventInvMonotonic(principal, event, t1, t2)
+    fold ctx.eventInv(principal, event, t2)
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.pureEventInv(principal, event, t1)
+ensures  ctx.pureEventInv(principal, event, t2)
+func (ctx DhContext) pureEventInvMonotonic(principal p.Principal, event ev.Event, t1, t2 tr.TraceEntry) {
+    if (ctx.isFinishI(event)) {
+        params := ctx.getFinishIParams(event)
+        GetDhLabeling().IsLabeledMonotonic(t1, t2, params.x, label.Readers(set[p.Id]{ p.principalId(principal) }))
+        if tr.containsCorruptId(t1.getCorruptIds(), set[p.Id]{ p.principalId(params.b) }) {
+            t1.getCorruptIdsMonotonic(t2)
+        } else {
+            GetDhLabeling().IsLabeledMonotonic(t1, t2, params.y, label.Readers(set[p.Id]{ p.principalId(params.b) }))
+            GetDhLabeling().IsLabeledMonotonic(t1, t2, params.sharedSecret, label.Join(label.Readers(set[p.Id]{ p.principalId(principal) }), label.Readers(set[p.Id]{ p.principalId(params.b) })))
+            t1.eventOccursMonotonic(t2, params.b, ev.NewEvent(Respond, RespondParams{ principal, params.b, tm.exp(tm.generator(), params.x), params.y, params.sharedSecret }))
+        }
+    }
+    if (ctx.isFinishR(event)) {
+        params := ctx.getFinishRParams(event)
+
+        assert exists X tm.Term :: { RespondParams{ params.a, principal, X, params.y, params.sharedSecret } } t1.eventOccurs(principal, ev.NewEvent(Respond, RespondParams{ params.a, principal, X, params.y, params.sharedSecret }))
+        // get witness:
+        X := arb.GetArbTerm()
+        assume t1.eventOccurs(principal, ev.NewEvent(Respond, RespondParams{ params.a, principal, X, params.y, params.sharedSecret }))
+        t1.eventOccursMonotonic(t2, principal, ev.NewEvent(Respond, RespondParams{ params.a, principal, X, params.y, params.sharedSecret }))
+        
+        if tr.containsCorruptId(t1.getCorruptIds(), set[p.Id]{ p.principalId(params.a), p.principalId(principal) }) {
+            t1.getCorruptIdsMonotonic(t2)
+        } else {
+            t1.eventOccursMonotonic(t2, params.a, ev.NewEvent(FinishI, FinishIParams{ params.a, principal, params.x, params.y, params.sharedSecret }))
+        }
+    }
+}
+
+ghost
+decreases
+requires ctx.Props()
+ensures res != nil
+pure func (ctx DhContext) GetUsageContext() (res UsageContext) {
+    return ctx.usage
+}
+
+type DhUsageContext struct {}
+DhUsageContext implements UsageContext
+
+ghost
+decreases
+pure func (ctx DhUsageContext) GetUsage(t tm.Term) option[u.Usage] {
+    return t.IsRandom() ? some(tm.getRandomUsage(t)) :
+        none[u.Usage]
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) PkePred(t tr.TraceEntry, usageString string, plaintext, pk tm.Term) bool {
+    return false // DH does not perform any AEAD encryption
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.PkePred(t1, usageString, plaintext, pk)
+ensures  ctx.PkePred(t2, usageString, plaintext, pk)
+func (ctx DhUsageContext) PkePredMonotonic(t1, t2 tr.TraceEntry, usageString string, plaintext, pk tm.Term) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) AeadPred(t tr.TraceEntry, usageString string, key, nonce, plaintext, authtext tm.Term) bool {
+    return false // DH does not perform any AEAD encryption
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.AeadPred(t1, usageString, key, nonce, plaintext, authtext)
+ensures  ctx.AeadPred(t2, usageString, key, nonce, plaintext, authtext)
+func (ctx DhUsageContext) AeadPredMonotonic(t1, t2 tr.TraceEntry, usageString string, key, nonce, plaintext, authtext tm.Term) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) SignPred(t tr.TraceEntry, usageString string, msg, sk tm.Term) bool {
+    return (ctx.IsMsg2(msg) ==>
+            label.Readers(set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(msg, 1))) }) == GetDhLabeling().GetLabel(sk) &&
+            exists y tm.Term :: { ctx.SignPredMsg2(t, msg, y) } ctx.SignPredMsg2(t, msg, y)) &&
+        (ctx.IsMsg3(msg) ==>
+            label.Readers(set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(msg, 1))) }) == GetDhLabeling().GetLabel(sk) &&
+            exists x, y tm.Term :: { ctx.SignPredMsg3(t, msg, x, y) } ctx.SignPredMsg3(t, msg, x, y))
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) SignPredMsg2(t tr.TraceEntry, msg, y tm.Term) bool {
+    return tm.getTupleElem(msg, 4) == tm.exp(tm.generator(), y) &&
+        t.nonceOccurs(y, label.Readers(set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(msg, 1))) }), u.Nonce(DhNonce)) &&
+        t.eventOccurs(tm.getString(tm.getTupleElem(msg, 1)), ev.NewEvent(Respond, RespondParams{ tm.getString(tm.getTupleElem(msg, 2)), tm.getString(tm.getTupleElem(msg, 1)), tm.getTupleElem(msg, 3), y, tm.exp(tm.getTupleElem(msg, 3), y) }))
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) SignPredMsg3(t tr.TraceEntry, msg, x, y tm.Term) bool {
+    return tm.getTupleElem(msg, 4) == tm.exp(tm.generator(), x) &&
+        (tr.containsCorruptId(t.getCorruptIds(), set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(msg, 2))) }) || tm.getTupleElem(msg, 3) == tm.exp(tm.generator(), y)) &&
+        t.nonceOccurs(x, label.Readers(set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(msg, 1))) }), u.Nonce(DhNonce)) &&
+        t.eventOccurs(tm.getString(tm.getTupleElem(msg, 1)), ev.NewEvent(FinishI, FinishIParams{ tm.getString(tm.getTupleElem(msg, 1)), tm.getString(tm.getTupleElem(msg, 2)), x, y, tm.exp(tm.exp(tm.generator(), x), y) }))
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.SignPred(t1, usageString, msg, sk)
+ensures  ctx.SignPred(t2, usageString, msg, sk)
+func (ctx DhUsageContext) SignPredMonotonic(t1, t2 tr.TraceEntry, usageString string, msg, sk tm.Term) {
+    if ctx.IsMsg2(msg) {
+        assert exists y tm.Term :: { ctx.SignPredMsg2(t1, msg, y) } ctx.SignPredMsg2(t1, msg, y)
+        // get witness:
+        y := arb.GetArbTerm()
+        assume ctx.SignPredMsg2(t1, msg, y)
+        ctx.SignPredMsg2Monotonic(t1, t2, msg, y)
+    } else if ctx.IsMsg3(msg) {
+        assert exists x, y tm.Term :: { ctx.SignPredMsg3(t1, msg, x, y) } ctx.SignPredMsg3(t1, msg, x, y)
+        // get witnesses:
+        x, y := arb.GetArbTerm(), arb.GetArbTerm()
+        assume ctx.SignPredMsg3(t1, msg, x, y)
+        ctx.SignPredMsg3Monotonic(t1, t2, msg, x, y)
+    }
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.SignPredMsg2(t1, msg, y)
+ensures  ctx.SignPredMsg2(t2, msg, y)
+func (ctx DhUsageContext) SignPredMsg2Monotonic(t1, t2 tr.TraceEntry, msg, y tm.Term) {
+    aId := tm.getString(tm.getTupleElem(msg, 2))
+    bId := tm.getString(tm.getTupleElem(msg, 1))
+    t1.nonceOccursMonotonic(t2, y, label.Readers(set[p.Id]{ p.principalId(bId) }), u.Nonce(DhNonce))
+    t1.eventOccursMonotonic(t2, bId, ev.NewEvent(Respond, RespondParams{ aId, bId, tm.getTupleElem(msg, 3), y, tm.exp(tm.getTupleElem(msg, 3), y) }))
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.SignPredMsg3(t1, msg, x, y)
+ensures  ctx.SignPredMsg3(t2, msg, x, y)
+func (ctx DhUsageContext) SignPredMsg3Monotonic(t1, t2 tr.TraceEntry, msg, x, y tm.Term) {
+    aId := tm.getString(tm.getTupleElem(msg, 1))
+    bId := tm.getString(tm.getTupleElem(msg, 2))
+    t1.getCorruptIdsMonotonic(t2)
+    t1.nonceOccursMonotonic(t2, x, label.Readers(set[p.Id]{ p.principalId(aId) }), u.Nonce(DhNonce))
+    t1.eventOccursMonotonic(t2, aId, ev.NewEvent(FinishI, FinishIParams{ aId, bId, x, y, tm.exp(tm.exp(tm.generator(), x), y) }))
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) IsMsg2(plaintext tm.Term) bool {
+    return plaintext.IsTuple5() && tm.getTupleElem(plaintext, 0) == tm.integer32(Msg2Tag)
+}
+
+ghost
+decreases
+pure func (ctx DhUsageContext) IsMsg3(plaintext tm.Term) bool {
+    return plaintext.IsTuple5() && tm.getTupleElem(plaintext, 0) == tm.integer32(Msg3Tag)
+}

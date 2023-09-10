@@ -1,0 +1,111 @@
+package labelLemma
+
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+
+
+// the same term constructed for the initiator has the same
+// label as the one constructed at the responder's side.
+// thus, this file states the labels for important terms.
+
+ghost
+decreases
+pure func Label_c1() label.SecrecyLabel {
+	return label.Meet(label.Public(), label.Public())
+}
+
+ghost
+decreases
+pure func Label_c2(aSessId, bId p.Id) label.SecrecyLabel {
+	return label.Meet(Label_c1(), label.Join(label.Readers(set[p.Id]{ bId }), label.Readers(set[p.Id]{ aSessId })))
+}
+
+ghost
+decreases
+pure func Label_k1(aSessId, bId p.Id) label.SecrecyLabel {
+	return Label_c2(aSessId, bId)
+}
+
+ghost
+decreases
+pure func Label_DhStatic(aId, bId p.Id) label.SecrecyLabel {
+	return label.Join(label.Readers(set[p.Id]{ aId }), label.Readers(set[p.Id]{ bId }))
+}
+
+ghost
+decreases
+pure func Label_DhStaticEphemeral(aId, bSessId p.Id) label.SecrecyLabel {
+	return label.Join(label.Readers(set[p.Id]{ aId }), label.Readers(set[p.Id]{ bSessId }))
+}
+
+ghost
+decreases
+pure func Label_c3(aSessId, bId p.Id) label.SecrecyLabel {
+	return label.Meet(Label_c2(aSessId, bId), Label_DhStatic(aSessId.getPrincipalId(), bId))
+}
+
+ghost
+decreases
+pure func Label_c3Precise(aSessId, bId p.Id) label.SecrecyLabel {
+	return label.Join(label.Readers(set[p.Id]{ bId }), label.Readers(set[p.Id]{ aSessId }))
+}
+
+ghost
+decreases
+pure func Label_k2(aSessId, bId p.Id) label.SecrecyLabel {
+	return Label_c3(aSessId, bId)
+}
+
+ghost
+decreases
+pure func Label_c4(aSessId, bId p.Id, epkRL label.SecrecyLabel) label.SecrecyLabel {
+	return label.Meet(Label_c3(aSessId, bId), epkRL)
+}
+
+ghost
+decreases
+pure func Label_c5(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return label.Meet(Label_c4(aSessId, bSessId.getPrincipalId(), label.Public()), label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId })))
+}
+
+ghost
+decreases
+pure func Label_c6(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return label.Meet(Label_c5(aSessId, bSessId), label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId.getPrincipalId() })))
+}
+
+ghost
+decreases
+pure func Label_c7(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return label.Meet(Label_c6(aSessId, bSessId), label.Public())
+}
+
+ghost
+decreases
+pure func Label_k3(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return Label_c7(aSessId, bSessId)
+}
+
+ghost
+decreases
+pure func Label_k_IR(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return Label_c7(aSessId, bSessId)
+}
+
+ghost
+decreases
+pure func Label_k_IRPrecise(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId }))
+}
+
+ghost
+decreases
+pure func Label_k_RI(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return Label_c7(aSessId, bSessId)
+}
+
+ghost
+decreases
+pure func Label_k_RIPrecise(aSessId, bSessId p.Id) label.SecrecyLabel {
+	return label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId }))
+}

@@ -1,0 +1,11 @@
+#ifndef NSL_EVENT_TYPES
+#define NSL_EVENT_TYPES
+
+
+// event types for the 4 NSL events:
+#define INITIATE 1
+#define RESPOND 2
+#define FINISHI 3
+#define FINISHR 4
+
+#endif

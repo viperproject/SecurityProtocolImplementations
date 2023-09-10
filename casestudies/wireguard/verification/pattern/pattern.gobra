@@ -1,0 +1,128 @@
+package patternInitiator
+
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import ll "github.com/viperproject/ReusableProtocolVerificationLibrary/labeledlibrary"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/common"
+import li "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma/initiator"
+import mi "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/initiator"
+import mr "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/responder"
+
+
+ghost
+preserves pattern1Constraints(llib, bId, rid, kI, ltpk, psk, ekI, c3, h4)
+requires tm.gamma(t) == tm.gamma(mi.Term_M2_lin(rid, sidR, kI, kI, psk, psk, ekI, ekI, c3, c3, h4, epkR, epkR, epkR, epkR, epkR, epkR, epkR, epkR, mac1, mac2))
+ensures  t == mi.Term_M2_lin(rid, x1, kI, kI, psk, psk, ekI, ekI, c3, c3, h4, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11)
+ensures patternRequirement1EPKRWitness(x2)
+func patternRequirement1(llib *ll.LabeledLibrary, bId p.Id, rid, kI, ltpk, psk, ekI, c3, h4, sidR, epkR, mac1, mac2, t tm.Term) (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11 tm.Term)
+
+// used to constrain the second pattern requirement instance
+pred patternRequirement1EPKRWitness(t tm.Term)
+
+ghost
+requires patternRequirement1EPKRWitness(epkR)
+preserves pattern1Constraints(llib, bId, rid, kI, ltpk, psk, ekI, c3, h4)
+requires tm.gamma(t) == tm.gamma(mi.Term_M2_lin(rid, sidR, kI, kI, psk, psk, ekI, ekI, c3, c3, h4, epkR, epkR, epkR, epkR, epkR, epkR, epkR, epkR, mac1, mac2))
+ensures  t == mi.Term_M2_lin(rid, x1, kI, kI, psk, psk, ekI, ekI, c3, c3, h4, o, epkR, epkR, epkR, epkR, epkR, epkR, epkR, x2, x3)
+func patternRequirement1_2(llib *ll.LabeledLibrary, bId p.Id, rid, kI, ltpk, psk, ekI, c3, h4, sidR, epkR, mac1, mac2, t tm.Term) (x1,x2,x3, o tm.Term)
+
+
+
+// epki is a variable
+ghost
+preserves pattern3Constraints(llib, aId, kR, pkI)
+requires tm.gamma(t) == tm.gamma(mr.Term_M1_lin(sidI, kR, kR, kR, kR, kR, kR, kR, pkI, pkI, pkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, ts, mac1, mac2))
+ensures  t == mr.Term_M1_lin(x1, kR, kR, kR, kR, kR, kR, kR, pkI, pkI, pkI, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14)
+ensures patternRequirement3EPKIWitness(x2)
+func patternRequirement3(llib *ll.LabeledLibrary, aId p.Id, kR, pkI, sidI, epkI, ts, mac1, mac2, t tm.Term) (x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14 tm.Term)
+
+// used to constrain the second pattern requirement instance
+pred patternRequirement3EPKIWitness(t tm.Term)
+
+// epki is not a variable
+ghost
+requires patternRequirement3EPKIWitness(epkI) // makes epkI contrained
+preserves pattern3Constraints(llib, aId, kR, pkI)
+requires tm.gamma(t) == tm.gamma(mr.Term_M1_lin(sidI, kR, kR, kR, kR, kR, kR, kR, pkI, pkI, pkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, ts, mac1, mac2))
+ensures  t == mr.Term_M1_lin(x1, kR, kR, kR, kR, kR, kR, kR, pkI, pkI, pkI, o, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, epkI, x2, x3, x4)
+func patternRequirement3_2(llib *ll.LabeledLibrary, aId p.Id, kR, pkI, sidI, epkI, ts, mac1, mac2, t tm.Term) (x1,x2,x3,x4, o tm.Term)
+
+ghost
+preserves pattern4Constraints(llib, foreignId, keyUsage, rid, foreignKey)
+requires tm.gamma(t) == tm.gamma(tm.tuple4(tm.integer32(4), rid, n, tm.aead(foreignKey,n,msg,tm.zeroString(0))))
+ensures  t == tm.tuple4(tm.integer32(4), rid, x1, tm.aead(foreignKey,x2,x3,tm.zeroString(0)))
+ensures  patternRequirement4NonceWitness(x1)
+func patternRequirement4(llib *ll.LabeledLibrary, foreignId p.Id, keyUsage string, rid, foreignKey, n, msg, t tm.Term) (x1, x2, x3 tm.Term)
+
+// used to constrain the second pattern requirement instance
+pred patternRequirement4NonceWitness(t tm.Term)
+
+ghost
+requires patternRequirement4NonceWitness(n)
+preserves pattern4Constraints(llib, foreignId, keyUsage, rid, foreignKey)
+requires tm.gamma(t) == tm.gamma(tm.tuple4(tm.integer32(4), rid, n, tm.aead(foreignKey,n,msg,tm.zeroString(0))))
+ensures  t == tm.tuple4(tm.integer32(4), rid, o, tm.aead(foreignKey,n,x1,tm.zeroString(0)))
+func patternRequirement4_2(llib *ll.LabeledLibrary, foreignId p.Id, keyUsage string, rid, foreignKey, n, msg, t tm.Term) (x1, o tm.Term)
+
+ghost
+preserves pattern1Constraints(llib, bId, rid, kI, ltpk, psk, ekI, c3, h4)
+requires tm.gamma(t) == tm.gamma(mi.Term_M2(rid, sidR, kI, psk, ekI, c3, h4, epkR, mac1, mac2))
+ensures  t == mi.Term_M2(rid, x1, kI, psk, ekI, c3, h4, x2, x3, x4)
+func patternProperty1(llib *ll.LabeledLibrary, bId p.Id, rid, kI, ltpk, psk, ekI, c3, h4, sidR, epkR, mac1, mac2, t tm.Term) (x1,x2,x3,x4 tm.Term) {
+
+    // the non-linear pattern is decomposed into two linear patterns
+    _,y2,_,_,_,_,_,_,_,_,_ := patternRequirement1(llib, bId, rid, kI, ltpk, psk, ekI, c3, h4, sidR, epkR, mac1, mac2, t)
+    z1,z2,z3,_ := patternRequirement1_2(llib, bId, rid, kI, ltpk, psk, ekI, c3, h4, sidR, y2, mac1, mac2, t)
+    return z1,y2,z2,z3
+}
+
+/** constraints the parameters of patternProperty1, patternRequirement1, and patternRequirement1_2 to the trace */
+pred pattern1Constraints(llib *ll.LabeledLibrary, bId p.Id, rid, kI, ltpk, psk, ekI, c3, h4 tm.Term) {
+    acc(llib.Mem(), 1/16) &&
+    llib.Owner().getSession() == some(tm.getInt32(rid)) &&
+    GetWgLabeling().IsSecretKey(llib.Snapshot(), llib.Owner().getPrincipalId(), kI, labeling.KeyTypeDh(), WgKey) &&
+    GetWgLabeling().IsSecretKey(llib.Snapshot(), llib.OwnerWoThread(), ekI, labeling.KeyTypeDh(), WgEphemeralSk) &&
+    li.c3Props(llib.Snapshot(), ekI, c3, llib.OwnerWoThread(), bId) &&
+    li.h4Props(llib.Snapshot(), h4, kI, ltpk, ekI)
+}
+
+ghost
+preserves pattern3Constraints(llib, aId, kR, pkI)
+requires tm.gamma(t) == tm.gamma(mr.Term_M1(sidI, kR, pkI, epkI, ts, mac1, mac2))
+ensures  t == mr.Term_M1(x1, kR, pkI, x2, x3, x4, x5)
+func patternProperty3(llib *ll.LabeledLibrary, aId p.Id, kR, pkI, sidI, epkI, ts, mac1, mac2, t tm.Term) (x1,x2,x3,x4,x5 tm.Term) {
+    // the non-linear pattern is decomposed into two linear patterns
+    _,y2,_,_,_,_,_,_,_,_,_,_,_,_ := patternRequirement3(llib, aId, kR, pkI, sidI, epkI, ts, mac1, mac2, t)
+    z1,z2,z3,z4,_ := patternRequirement3_2(llib, aId, kR, pkI, sidI, y2, ts, mac1, mac2, t)
+    return z1,y2,z2,z3,z4
+}
+
+/** constraints the parameters of patternProperty3, patternRequirement3, and patternRequirement3_2 to the trace */
+pred pattern3Constraints(llib *ll.LabeledLibrary, aId p.Id, kR, pkI tm.Term) {
+    acc(llib.Mem(), 1/16) &&
+    GetWgLabeling().IsSecretKey(llib.Snapshot(), llib.Owner().getPrincipalId(), kR, labeling.KeyTypeDh(), WgKey) &&
+    GetWgLabeling().IsPublicKeyExistential(llib.Snapshot(), aId, pkI, labeling.KeyTypeDh(), WgKey)
+}
+
+ghost
+preserves pattern4Constraints(llib, foreignId, keyUsage, rid, foreignKey)
+requires tm.gamma(t) == tm.gamma(tm.tuple4(tm.integer32(4), rid, n, tm.aead(foreignKey,n,msg,tm.zeroString(0))))
+ensures  t == tm.tuple4(tm.integer32(4), rid, x1, tm.aead(foreignKey,x1,x2,tm.zeroString(0)))
+func patternProperty4(llib *ll.LabeledLibrary, foreignId p.Id, keyUsage string, rid, foreignKey, n, msg, t tm.Term) (x1, x2 tm.Term) {
+
+    // the non-linear pattern is decomposed into two linear patterns
+    y1, _, _ := patternRequirement4(llib, foreignId, keyUsage, rid, foreignKey, n, msg, t)
+    z1, _ := patternRequirement4_2(llib, foreignId, keyUsage, rid, foreignKey, y1, msg, t)
+    return y1, z1
+}
+
+/** constraints the parameters of patternProperty4, patternRequirement4, and patternRequirement4_2 to the trace */
+pred pattern4Constraints(llib *ll.LabeledLibrary, foreignId p.Id, keyUsage string, rid, foreignKey tm.Term) {
+    acc(llib.Mem(), 1/16) &&
+    llib.Owner().getSession() == some(tm.getInt32(rid)) &&
+    (keyUsage == "WG kir Key" || keyUsage == "WG kri Key") &&
+    GetWgLabeling().IsSecretRelaxed(llib.Snapshot(), foreignKey, label.Readers(set[p.Id]{ llib.OwnerWoThread(), foreignId }), u.AeadKey(keyUsage))
+}

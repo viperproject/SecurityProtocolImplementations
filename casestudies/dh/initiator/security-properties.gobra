@@ -1,0 +1,71 @@
+package initiator
+
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import ll "github.com/viperproject/ReusableProtocolVerificationLibrary/labeledlibrary"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/dh/common"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+
+
+ghost
+requires a.Mem(xT, yT) && a.Vers(xT, yT) == 2
+ensures  a.Mem(xT, yT) && a.Vers(xT, yT) == 3
+func (a *A) proveSecurityProperties(xT, yT tm.Term) {
+	unfold a.Mem(xT, yT)
+	// we show that the initiator injectively agrees with the responder
+	// on the shared secret
+	sharedSecretT := tm.exp(tm.exp(tm.generator(), yT), xT)
+	initiatorInjectiveAgreement(a.llib, a.IdA, a.IdB, xT, yT, sharedSecretT)
+	
+	// we show now that the shared secret is indeed secret:
+	a.llib.SecrecyLemma(sharedSecretT, set[p.Id]{ p.principalId(a.IdA), p.principalId(a.IdB) })
+
+	a.Version = 3
+	fold a.Mem(xT, yT)
+}
+
+ghost
+decreases
+requires l.Mem()
+requires l.Ctx() == GetDhContext()
+requires sharedSecretT == tm.exp(tm.exp(tm.generator(), yT), xT)
+requires l.Snapshot().eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }))
+ensures  l.Mem()
+ensures  l.ImmutableState() == old(l.ImmutableState())
+ensures  l.Snapshot() == old(l.Snapshot())
+ensures  l.NonInjectiveAgreement(idA, idB, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }), ev.NewEvent(Respond, RespondParams{ idA, idB, tm.exp(tm.generator(), xT), yT, sharedSecretT }), set[p.Id]{ p.principalId(idB) })
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(l.Snapshot().eventOccursWitness(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT })).getCorruptIds(), set[p.Id]{ p.principalId(idB) })
+ensures  optCorruptedId != none[p.Id] ==> get(optCorruptedId).getPrincipal() == idB
+func initiatorNonInjectiveAgreement(l *ll.LabeledLibrary, idA, idB p.Principal, xT, yT, sharedSecretT tm.Term) (optCorruptedId option[p.Id]) {
+	aId := p.principalId(idA)
+	bId := p.principalId(idB)
+	finishIWitness := l.EventOccursImpliesEventInv(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }))
+	if tr.containsCorruptId(finishIWitness.getCorruptIds(), set[p.Id]{ bId }) {
+        optCorruptedId = some(bId)
+	}
+}
+
+ghost
+decreases
+requires l.Mem()
+requires l.Ctx() == GetDhContext()
+requires sharedSecretT == tm.exp(tm.exp(tm.generator(), yT), xT)
+requires l.Snapshot().eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }))
+ensures  l.Mem()
+ensures  l.ImmutableState() == old(l.ImmutableState())
+ensures  l.Snapshot() == old(l.Snapshot())
+ensures  l.InjectiveAgreement(idA, idB, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }), ev.NewEvent(Respond, RespondParams{ idA, idB, tm.exp(tm.generator(), xT), yT, sharedSecretT }), set[p.Id]{ p.principalId(idB) })
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(l.Snapshot().eventOccursWitness(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT })).getCorruptIds(), set[p.Id]{ p.principalId(idB) })
+ensures  optCorruptedId != none[p.Id] ==> get(optCorruptedId).getPrincipal() == idB
+func initiatorInjectiveAgreement(l *ll.LabeledLibrary, idA, idB p.Principal, xT, yT, sharedSecretT tm.Term) (optCorruptedId option[p.Id]) {
+	optCorruptedId = initiatorNonInjectiveAgreement(l, idA, idB, xT, yT, sharedSecretT)
+	if optCorruptedId == none[p.Id] {
+		event := ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT })
+		l.UniqueEventIsUnique(idA, event)
+		assert l.EventIsUnique(idA, event)
+	}
+}

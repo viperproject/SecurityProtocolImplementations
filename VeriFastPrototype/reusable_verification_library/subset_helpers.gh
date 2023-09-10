@@ -1,0 +1,11 @@
+#ifndef SUBSET_HELPERS
+#define SUBSET_HELPERS
+
+#include "listex.gh"
+
+// this files contains lemmas about set intersections, which we assume.
+lemma void subset_intersection_helper<t>(list<t> smaller, list<t> larger, list<t> aux);
+    requires intersection(smaller, aux) != nil && subset(smaller, larger);
+    ensures intersection(larger, aux) != nil;
+
+#endif

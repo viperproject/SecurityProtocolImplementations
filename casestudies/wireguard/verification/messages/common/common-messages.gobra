@@ -1,0 +1,33 @@
+package messageCommon
+
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+
+
+// bytes
+
+ghost
+decreases
+pure func Bytes_c0() (res tm.Bytes) {
+	return tm.hashB(tm.infoBytesB())
+}
+
+ghost 
+decreases
+pure func Bytes_h0() (res tm.Bytes) {
+	return tm.hashB(tm.tuple2B(Bytes_c0(), tm.prologueBytesB()))
+}
+
+
+// terms
+
+ghost
+decreases
+pure func Term_c0() (res tm.Term) {
+	return tm.hash(tm.infoTerm())
+}
+
+ghost
+decreases
+pure func Term_h0() (res tm.Term) {
+	return tm.hash(tm.tuple2(Term_c0(), tm.prologueTerm()))
+}

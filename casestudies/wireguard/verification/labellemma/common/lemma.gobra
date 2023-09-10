@@ -1,0 +1,236 @@
+package labelLemmaCommon
+
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/common"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/common"
+
+
+ghost
+decreases
+ensures  c0T == Term_c0()
+ensures  GetWgLabeling().IsLabeled(snapshot, c0T, label.Public())
+func CreateC0(snapshot tr.TraceEntry) (c0T tm.Term) {
+    c0T = Term_c0()
+    assert GetWgLabeling().IsLabeled(snapshot, tm.infoTerm(), label.Public())
+}
+
+ghost
+decreases
+ensures  h0T == Term_h0()
+ensures  GetWgLabeling().IsLabeledPrecise(snapshot, h0T, label.Public())
+func CreateH0(snapshot tr.TraceEntry) (h0T tm.Term) {
+    c0T := CreateC0(snapshot)
+    h0T = Term_h0()
+    GetWgLabeling().ApplyHash2Tuple(snapshot, c0T, tm.prologueTerm(), label.Public(), label.Public())
+}
+
+ghost
+decreases
+requires 1 <= kdf && kdf <= 3
+requires GetWgLabeling().IsSecretRelaxed(snapshot, firstT, firstL, firstU)
+requires GetWgLabeling().IsLabeledRelaxed(snapshot, secondT, secondL)
+requires GetWgUsage().Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE) != none[u.Usage]
+requires get(GetWgUsage().Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)).IsKdfKey()
+requires kdf == 1 ==> GetWgUsage().KdfUsage(tm.kdf1(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+requires kdf == 2 ==> GetWgUsage().KdfUsage(tm.kdf2(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+requires kdf == 3 ==> GetWgUsage().KdfUsage(tm.kdf3(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+ensures  kdf == 1 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf1(tm.tuple2(firstT, secondT)), firstL)
+ensures  kdf == 1 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf1(tm.tuple2(firstT, secondT)), secondL)
+ensures  kdf == 2 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf2(tm.tuple2(firstT, secondT)), firstL)
+ensures  kdf == 2 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf2(tm.tuple2(firstT, secondT)), secondL)
+ensures  kdf == 3 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf3(tm.tuple2(firstT, secondT)), firstL)
+ensures  kdf == 3 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf3(tm.tuple2(firstT, secondT)), secondL)
+ensures  kdf == 1 ==> GetWgLabeling().GetUsage(tm.kdf1(tm.tuple2(firstT, secondT))) == resU
+ensures  kdf == 2 ==> GetWgLabeling().GetUsage(tm.kdf2(tm.tuple2(firstT, secondT))) == resU
+ensures  kdf == 3 ==> GetWgLabeling().GetUsage(tm.kdf3(tm.tuple2(firstT, secondT))) == resU
+func ApplyKdf(kdf int, snapshot tr.TraceEntry, firstT, secondT tm.Term, firstL, secondL label.SecrecyLabel, firstU u.Usage, resU option[u.Usage]) {
+    usageCtx := GetWgUsage()
+    firstActualL := GetWgLabeling().GetLabel(firstT)
+    secondActualL := GetWgLabeling().GetLabel(secondT)
+    inputT := tm.tuple2(firstT, secondT)
+    inputU := get(usageCtx.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE))
+    var resT tm.Term
+    if kdf == 1 {
+        resT = tm.kdf1(inputT)
+    } else if kdf == 2 {
+        resT = tm.kdf2(inputT)
+    } else {
+        resT = tm.kdf3(inputT)
+    }
+
+    assert GetWgLabeling().nestedMeet(inputT, getTupleSeq(inputT), 0) == label.Meet(firstActualL, secondActualL)
+    assert GetWgLabeling().IsValid(snapshot, inputT)
+    assert GetWgLabeling().GetLabel(inputT) == label.Meet(firstActualL, secondActualL)
+    GetWgLabeling().CanFlowReflexive(snapshot, firstActualL)
+    GetWgLabeling().CanFlowCreateMeetRhs(snapshot, firstActualL, firstActualL, secondActualL)
+    GetWgLabeling().CanFlowTransitive(snapshot, firstL, firstActualL, label.Meet(firstActualL, secondActualL))
+    GetWgLabeling().CanFlowCreateMeetBoth(snapshot, firstL, firstActualL, secondL, secondActualL)
+    GetWgLabeling().CanFlowResolveMeetLhs(snapshot, firstL, secondL, GetWgLabeling().GetLabel(resT))
+
+    // derive usage:
+    usageCtx.GetUsageInternalIndependentOf2ndParam(inputT, MIN_GET_USAGE_INTERNAL_MEASURE + 1, MIN_GET_USAGE_INTERNAL_MEASURE)
+    usageCtx.GetKdfUsageStringIndependentFromDecreasesMeasure(inputT, MIN_GET_USAGE_INTERNAL_MEASURE + 3, MIN_GET_USAGE_INTERNAL_MEASURE + 2)
+}
+
+ghost
+decreases
+requires 1 <= kdf && kdf <= 3
+requires GetWgLabeling().IsSecretPrecise(snapshot, firstT, firstL, firstU)
+requires GetWgLabeling().IsLabeledPrecise(snapshot, secondT, secondL)
+requires GetWgUsage().Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE) != none[u.Usage]
+requires get(GetWgUsage().Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)).IsKdfKey()
+requires kdf == 1 ==> GetWgUsage().KdfUsage(tm.kdf1(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+requires kdf == 2 ==> GetWgUsage().KdfUsage(tm.kdf2(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+requires kdf == 3 ==> GetWgUsage().KdfUsage(tm.kdf3(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+ensures  kdf == 1 ==> resT == tm.kdf1(tm.tuple2(firstT, secondT))
+ensures  kdf == 2 ==> resT == tm.kdf2(tm.tuple2(firstT, secondT))
+ensures  kdf == 3 ==> resT == tm.kdf3(tm.tuple2(firstT, secondT))
+ensures  secondL == label.Public() ? resL == firstL :
+    firstL == label.Public() ? resL == secondL : resL == label.Meet(firstL, secondL)
+ensures  GetWgLabeling().IsLabeledPrecise(snapshot, resT, resL)
+ensures  GetWgLabeling().GetUsage(resT) == resU
+// additional postconditions such that callers do not need to apply so many lemmas afterwards:
+ensures  GetWgLabeling().nestedMeet(tm.tuple2(firstT, secondT), getTupleSeq(tm.tuple2(firstT, secondT)), 0) == label.Meet(GetWgLabeling().GetLabel(firstT), GetWgLabeling().GetLabel(secondT))
+ensures  GetWgLabeling().CanFlow(snapshot, firstL, secondL) ==> GetWgLabeling().IsLabeledPrecise(snapshot, resT, secondL)
+ensures  GetWgLabeling().CanFlow(snapshot, firstL, secondL) && GetWgLabeling().IsJoinOfReaders(secondL) ==>
+    GetWgLabeling().IsLabeledRelaxed(snapshot, resT, GetWgLabeling().ReaderUnionFromJoin(secondL))
+ensures  GetWgLabeling().CanFlow(snapshot, secondL, firstL) ==> GetWgLabeling().IsLabeledPrecise(snapshot, resT, firstL)
+ensures  GetWgLabeling().CanFlow(snapshot, secondL, firstL) && GetWgLabeling().IsJoinOfReaders(firstL) ==>
+    GetWgLabeling().IsLabeledRelaxed(snapshot, resT, GetWgLabeling().ReaderUnionFromJoin(firstL))
+func ApplyKdfPrecise(kdf int, snapshot tr.TraceEntry, firstT, secondT tm.Term, firstL, secondL label.SecrecyLabel, firstU u.Usage, resU option[u.Usage]) (resT tm.Term, resL label.SecrecyLabel) {
+    usageCtx := GetWgUsage()
+    firstActualL := GetWgLabeling().GetLabel(firstT)
+    secondActualL := GetWgLabeling().GetLabel(secondT)
+    inputT := tm.tuple2(firstT, secondT)
+    inputU := get(usageCtx.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE))
+    if kdf == 1 {
+        resT = tm.kdf1(inputT)
+    } else if kdf == 2 {
+        resT = tm.kdf2(inputT)
+    } else {
+        resT = tm.kdf3(inputT)
+    }
+
+    assert GetWgLabeling().nestedMeet(inputT, getTupleSeq(inputT), 0) == label.Meet(firstActualL, secondActualL)
+    assert GetWgLabeling().IsValid(snapshot, inputT)
+    assert GetWgLabeling().GetLabel(inputT) == label.Meet(firstActualL, secondActualL)
+    GetWgLabeling().CanFlowReflexive(snapshot, firstActualL)
+    GetWgLabeling().CanFlowCreateMeetRhs(snapshot, firstActualL, firstActualL, secondActualL)
+    GetWgLabeling().CanFlowTransitive(snapshot, firstL, firstActualL, label.Meet(firstActualL, secondActualL))
+    GetWgLabeling().CanFlowCreateMeetBoth(snapshot, firstActualL, firstL, secondActualL, secondL)
+    GetWgLabeling().CanFlowCreateMeetBoth(snapshot, firstL, firstActualL, secondL, secondActualL)
+    GetWgLabeling().CanFlowResolveMeetLhs(snapshot, firstL, secondL, GetWgLabeling().GetLabel(resT))
+
+    // derive usage:
+    usageCtx.GetUsageInternalIndependentOf2ndParam(inputT, MIN_GET_USAGE_INTERNAL_MEASURE + 1, MIN_GET_USAGE_INTERNAL_MEASURE)
+    usageCtx.GetKdfUsageStringIndependentFromDecreasesMeasure(inputT, MIN_GET_USAGE_INTERNAL_MEASURE + 3, MIN_GET_USAGE_INTERNAL_MEASURE + 2)
+
+    if secondL == label.Public() {
+        resL = firstL
+        GetWgLabeling().CanFlowReflexive(snapshot, firstL)
+        GetWgLabeling().CanFlowTransitive(snapshot, secondL, secondActualL, label.Public())
+        GetWgLabeling().FlowsToPublicCanFlow(snapshot, secondL, firstL)
+        GetWgLabeling().CanFlowCreateMeetLhs(snapshot, firstL, secondL, firstL)
+        GetWgLabeling().CanFlowTransitive(snapshot, label.Meet(firstActualL, secondActualL), label.Meet(firstL, secondL), firstL)
+    } else if firstL == label.Public() {
+        resL = secondL
+        GetWgLabeling().CanFlowReflexive(snapshot, secondL)
+        GetWgLabeling().CanFlowTransitive(snapshot, firstL, firstActualL, label.Public())
+        GetWgLabeling().FlowsToPublicCanFlow(snapshot, firstL, secondL)
+        GetWgLabeling().CanFlowCreateMeetLhs(snapshot, firstL, secondL, secondL)
+        GetWgLabeling().CanFlowTransitive(snapshot, label.Meet(firstActualL, secondActualL), label.Meet(firstL, secondL), secondL)
+    } else {
+        resL = label.Meet(firstL, secondL)
+    }
+
+    // show additional postconditions:
+    if GetWgLabeling().CanFlow(snapshot, firstL, secondL) {
+        GetWgLabeling().SimplifySimilarMeet(snapshot, resT, secondL, firstL)
+        // we know now that `resT` precisely flows to `firstL`
+        if GetWgLabeling().IsJoinOfReaders(secondL) {
+            GetWgLabeling().SimplifyJoinToReadersSet(snapshot, resT, label.GetReaders(label.GetFirstLabel(secondL)), label.GetReaders(label.GetSecondLabel(secondL)))
+        }
+    }
+    if GetWgLabeling().CanFlow(snapshot, secondL, firstL) {
+        GetWgLabeling().SimplifySimilarMeet(snapshot, resT, firstL, secondL)
+        // we know now that `resT` precisely flows to `firstL`
+        if GetWgLabeling().IsJoinOfReaders(firstL) {
+            GetWgLabeling().SimplifyJoinToReadersSet(snapshot, resT, label.GetReaders(label.GetFirstLabel(firstL)), label.GetReaders(label.GetSecondLabel(firstL)))
+        }
+    }
+}
+
+ghost
+decreases
+requires 1 <= kdf && kdf <= 3
+requires GetWgLabeling().IsSecretRelaxed(snapshot, firstT, firstLowerL, firstU)
+requires GetWgLabeling().IsMsg(snapshot, firstT, firstUpperL)
+requires GetWgLabeling().IsLabeledRelaxed(snapshot, secondT, secondLowerL)
+requires GetWgLabeling().IsMsg(snapshot, secondT, secondUpperL)
+requires GetWgUsage().Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE) != none[u.Usage]
+requires get(GetWgUsage().Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)).IsKdfKey()
+requires kdf == 1 ==> GetWgUsage().KdfUsage(tm.kdf1(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+requires kdf == 2 ==> GetWgUsage().KdfUsage(tm.kdf2(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+requires kdf == 3 ==> GetWgUsage().KdfUsage(tm.kdf3(tm.tuple2(firstT, secondT)), u.GetUsageString(get(WgUsageContext{ }.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE)))) == resU
+ensures  secondUpperL == label.Public() ? resUpperL == firstUpperL :
+    firstUpperL == label.Public() ? resUpperL == secondUpperL : resUpperL == label.Meet(firstUpperL, secondUpperL)
+ensures  kdf == 1 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf1(tm.tuple2(firstT, secondT)), firstLowerL)
+ensures  kdf == 1 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf1(tm.tuple2(firstT, secondT)), secondLowerL)
+ensures  kdf == 2 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf2(tm.tuple2(firstT, secondT)), firstLowerL)
+ensures  kdf == 2 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf2(tm.tuple2(firstT, secondT)), secondLowerL)
+ensures  kdf == 3 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf3(tm.tuple2(firstT, secondT)), firstLowerL)
+ensures  kdf == 3 ==> GetWgLabeling().IsLabeledRelaxed(snapshot, tm.kdf3(tm.tuple2(firstT, secondT)), secondLowerL)
+ensures  kdf == 1 ==> GetWgLabeling().IsMsg(snapshot, tm.kdf1(tm.tuple2(firstT, secondT)), resUpperL)
+ensures  kdf == 2 ==> GetWgLabeling().IsMsg(snapshot, tm.kdf2(tm.tuple2(firstT, secondT)), resUpperL)
+ensures  kdf == 3 ==> GetWgLabeling().IsMsg(snapshot, tm.kdf3(tm.tuple2(firstT, secondT)), resUpperL)
+ensures  kdf == 1 ==> GetWgLabeling().GetUsage(tm.kdf1(tm.tuple2(firstT, secondT))) == resU
+ensures  kdf == 2 ==> GetWgLabeling().GetUsage(tm.kdf2(tm.tuple2(firstT, secondT))) == resU
+ensures  kdf == 3 ==> GetWgLabeling().GetUsage(tm.kdf3(tm.tuple2(firstT, secondT))) == resU
+func ApplyKdfBounded(kdf int, snapshot tr.TraceEntry, firstT, secondT tm.Term, firstLowerL, firstUpperL, secondLowerL, secondUpperL label.SecrecyLabel, firstU u.Usage, resU option[u.Usage]) (resUpperL label.SecrecyLabel) {
+    usageCtx := GetWgUsage()
+    actualFirstL := GetWgLabeling().GetLabel(firstT)
+    actualSecondL := GetWgLabeling().GetLabel(secondT)
+    inputT := tm.tuple2(firstT, secondT)
+    inputU := get(usageCtx.Tuple2Usage(tm.tuple2(firstT, secondT), MIN_GET_USAGE_INTERNAL_MEASURE))
+    var resT tm.Term
+    if kdf == 1 {
+        resT = tm.kdf1(inputT)
+    } else if kdf == 2 {
+        resT = tm.kdf2(inputT)
+    } else {
+        resT = tm.kdf3(inputT)
+    }
+
+    // show lower bound:
+    assert GetWgLabeling().nestedMeet(inputT, getTupleSeq(inputT), 0) == label.Meet(actualFirstL, actualSecondL)
+    assert GetWgLabeling().IsValid(snapshot, inputT)
+    assert GetWgLabeling().GetLabel(inputT) == label.Meet(actualFirstL, actualSecondL)
+    GetWgLabeling().CanFlowReflexive(snapshot, actualFirstL)
+    GetWgLabeling().CanFlowCreateMeetRhs(snapshot, actualFirstL, actualFirstL, actualSecondL)
+    GetWgLabeling().CanFlowTransitive(snapshot, firstLowerL, actualFirstL, label.Meet(actualFirstL, actualSecondL))
+    GetWgLabeling().CanFlowCreateMeetBoth(snapshot, firstLowerL, actualFirstL, secondLowerL, actualSecondL)
+    GetWgLabeling().CanFlowResolveMeetLhs(snapshot, firstLowerL, secondLowerL, GetWgLabeling().GetLabel(resT))
+    
+    // derive usage:
+    usageCtx.GetUsageInternalIndependentOf2ndParam(inputT, MIN_GET_USAGE_INTERNAL_MEASURE + 1, MIN_GET_USAGE_INTERNAL_MEASURE)
+    usageCtx.GetKdfUsageStringIndependentFromDecreasesMeasure(inputT, MIN_GET_USAGE_INTERNAL_MEASURE + 3, MIN_GET_USAGE_INTERNAL_MEASURE + 2)
+
+    // show upper bound:
+    if secondUpperL == label.Public() {
+        resUpperL = firstUpperL
+        GetWgLabeling().FlowsToPublicCanFlow(snapshot, actualSecondL, firstUpperL)
+    } else if firstUpperL == label.Public() {
+        resUpperL = secondUpperL
+        GetWgLabeling().FlowsToPublicCanFlow(snapshot, actualFirstL, secondUpperL)
+    } else {
+        resUpperL = label.Meet(firstUpperL, secondUpperL)
+        GetWgLabeling().CanFlowCreateMeetRhs(snapshot, actualFirstL, firstUpperL, secondUpperL)
+        GetWgLabeling().CanFlowCreateMeetRhs(snapshot, actualSecondL, firstUpperL, secondUpperL)
+    }
+    GetWgLabeling().CanFlowCreateMeetLhs(snapshot, actualFirstL, actualSecondL, resUpperL)
+    assert GetWgLabeling().CanFlow(snapshot, label.Meet(actualFirstL, actualSecondL), resUpperL)
+}

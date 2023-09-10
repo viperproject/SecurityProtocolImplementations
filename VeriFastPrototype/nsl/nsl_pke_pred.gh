@@ -1,0 +1,135 @@
+#ifndef NSL_PKE_PRED
+#define NSL_PKE_PRED
+
+#include "labeling.gh"
+#include "nsl_event_types.gh"
+#include "protocol_specific_pke_definition.gh"
+
+
+// This file (and corresponding `.c` file) implements `protocol_specific_pke_definition.gh`,
+// i.e., provides a body for the `PkeCtxt` predicate, proves monotonicity of `pkePred` (as
+// mandated by `protocol_specific_pke_lemma.gh`) and provides a few additional helper lemmas.
+
+fixpoint bool isMsg1(Term plaintext, Term pk) {
+    switch (plaintext) {
+        case integer(value): return false;
+        case stringTerm(str): return false;
+        case encrypt(enc, pt): return false;
+        case hash(term): return false;
+        case publicKey(str_k): return false;
+        case nonce(bytes, l): return false;
+        case tuple2(term1, term2): return false;
+        case tuple3(term1, term2, term3): return getInteger(term1) == 1;
+        case tuple4(term1, term2, term3, term4): return false;
+    }
+}
+
+fixpoint bool isMsg2(Term plaintext, Term pk) {
+    switch (plaintext) {
+        case integer(value): return false;
+        case stringTerm(str): return false;
+        case encrypt(enc, pt): return false;
+        case hash(term): return false;
+        case publicKey(str_k): return false;
+        case nonce(bytes, l): return false;
+        case tuple2(term1, term2): return false;
+        case tuple3(term1, term2, term3): return false;
+        case tuple4(term1, term2, term3, term4): return getInteger(term1) == 2;    
+    }
+}
+
+fixpoint bool isMsg3(Term plaintext, Term pk) {
+    switch (plaintext) {
+        case integer(value): return false;
+        case stringTerm(str): return false;
+        case encrypt(enc, pt): return false;
+        case hash(term): return false;
+        case publicKey(str_k): return false;
+        case nonce(bytes, l): return false;
+        case tuple2(term1, term2): return getInteger(term1) == 3;
+        case tuple3(term1, term2, term3): return false;
+        case tuple4(term1, term2, term3, term4): return false;
+    }
+}
+
+fixpoint bool eventOccursFinishIHelper(EventParams params, int b_given, Term nb_given, int pr) {
+    switch (params) {
+        case InitiateParams(a, b, na): return false;
+        case RespondParams(a, b, na, nb): return false;
+        case FinishIParams(a, b, na, nb): return a == pr && b == b_given && nb == nb_given;
+        case FinishRParams(a, b, na, nb): return false;
+    }
+}
+
+fixpoint bool eventOccursFinishI(trace<EventParams> tr, int b, Term nb) {
+    switch (tr) {
+        case root(root_terms): return false; 
+        case makeEvent(t0, pr, e):
+            return switch(e) {
+                case newEvent(type, params):
+                    return (type == FINISHI && eventOccursFinishIHelper(params, b, nb, pr)) || eventOccursFinishI(t0, b, nb);
+            };
+        case makeCorrupt(t0, id): return eventOccursFinishI(t0, b, nb);
+        case makeMessage(t0, to, from, term): return eventOccursFinishI(t0, b, nb);
+        case makeDropMessage(t0, to, from, term): return eventOccursFinishI(t0, b, nb);
+        case makeNonce(t0, term): return eventOccursFinishI(t0, b, nb);
+        case makePublic(t0, term): return eventOccursFinishI(t0, b, nb);   
+    }
+}
+
+fixpoint bool ppred(trace<EventParams> tr, Term plaintext, Term pk, int skOwner) {
+    switch(plaintext) {
+        case integer(value): return true;
+        case stringTerm(str): return true;
+        case encrypt(enc, pt): return true;
+        case hash(term): return true;
+        case publicKey(str_k): return true;
+        case nonce(bytes, l): return true;
+        case tuple2(term1, nb):
+            return isMsg3(plaintext, pk) ?
+                eventOccursFinishI(tr, skOwner, nb) : true;
+        case tuple3(term1, na, idA):
+            return isMsg1(plaintext, pk) ?
+                nonceOccurs(tr, na, Readers(cons(getInteger(idA), cons(skOwner, nil)))) &&
+                eventOccurs(tr, getInteger(idA), newEvent(INITIATE, InitiateParams(getInteger(idA), skOwner, na))) : true;
+        case tuple4(term1, na, nb, idB):
+            return isMsg2(plaintext, pk) ?
+                nonceOccurs(tr, nb, Readers(cons(skOwner, cons(getInteger(idB), nil)))) &&
+                eventOccurs(tr, getInteger(idB), newEvent(RESPOND, RespondParams(skOwner, getInteger(idB), na, nb))) : true;
+    }
+}
+
+// `l` is the secret key's label which specifies a single reader:
+fixpoint bool pkePredHelper(trace<EventParams> tr, Term plaintext, Term pk, Label l) {
+    switch(l) {
+        case Public:
+            return false;
+        case Readers(list_readers):
+            return switch(list_readers) {
+                case nil: return false;
+                case cons(x, xs): return ppred(tr, plaintext, pk, x) && xs == nil;
+            };
+    }
+}
+
+fixpoint bool pkePred(Trace tr, Term plaintext, Term pk) {
+    return pkePredHelper(tr, plaintext, pk, getSkLabel(pk));
+}
+
+lemma void getPkeCtxt();
+    requires true;
+    ensures  PkeCtxt(pkePred);
+
+lemma void leakPkeCtxt();
+    requires PkeCtxt(pkePred);
+    ensures  true;
+
+lemma void learnPkeCtxt(PkePred p);
+    requires PkeCtxt(p);
+    ensures  PkeCtxt(p) &*& p == pkePred;
+
+lemma void eventOccursImpliesEventOccursFinishI(Trace snap, int idA, int idB, Term naT, Term nbT);
+    requires eventOccurs(snap, idA, newEvent(FINISHI, FinishIParams(idA, idB, naT, nbT))) == true;
+    ensures  eventOccursFinishI(snap, idB, nbT) == true;
+
+#endif

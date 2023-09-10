@@ -1,0 +1,18 @@
+#ifndef TRACE_ENTRY
+#define TRACE_ENTRY
+
+#include "event.gh"
+#include "term.gh"
+
+#define Trace trace<EventParams>
+
+inductive trace<EventParams> = 
+    | root(list<Term> publicTerms)
+    | makeEvent(trace<EventParams>, int principal, ParameterizedEvent e) 
+    | makeCorrupt(trace<EventParams>, int principal) 
+    | makeMessage(trace<EventParams>, int to, int from, Term)
+    | makeDropMessage(trace<EventParams>, int to, int from,  Term)
+    | makeNonce(trace<EventParams>, Term nonce)
+    | makePublic(trace<EventParams>, Term);
+
+#endif

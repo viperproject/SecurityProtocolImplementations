@@ -1,0 +1,78 @@
+package initiator2
+
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import ll "github.com/viperproject/ReusableProtocolVerificationLibrary/labeledlibrary"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/nsl/common"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+
+
+ghost
+requires a.Mem(naT, nbT) && a.Vers(naT, nbT) == 3
+ensures  a.Mem(naT, nbT) && a.Vers(naT, nbT) == 4
+func (a *A) proveSecurityProperties(naT, nbT tm.Term) {
+	// we show that the authentication properties' precondition is satisfied:
+	unfold a.Mem(naT, nbT)
+	initiatorInjectiveAgreement(a.llib, a.IdA, a.IdB, naT, nbT)
+	
+	GetNslLabeling().CanFlowReflexive(a.llib.Snapshot(), label.Readers(set[p.Id]{ p.principalId(a.IdA), p.principalId(a.IdB) }))
+	// we show now that the same naT & nbT are also secret:
+	a.llib.SecrecyLemma(naT, set[p.Id]{ p.principalId(a.IdA), p.principalId(a.IdB) })
+	a.llib.SecrecyLemma(nbT, set[p.Id]{ p.principalId(a.IdA), p.principalId(a.IdB) })
+
+	a.Version = 4
+	fold a.Mem(naT, nbT)
+}
+
+ghost
+decreases
+requires l.Mem()
+requires l.Ctx() == GetNslContext()
+requires l.Snapshot().eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT }))
+ensures  l.Mem()
+ensures  l.ImmutableState() == old(l.ImmutableState())
+ensures  l.Snapshot() == old(l.Snapshot())
+ensures  l.NonInjectiveAgreement(idA, idB, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT }), ev.NewEvent(Respond, RespondParams{ idA, idB, naT, nbT }), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(l.Snapshot().eventOccursWitness(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT })).getCorruptIds(), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+ensures  optCorruptedId != none[p.Id] ==>
+	(get(optCorruptedId).getPrincipal() == idA || get(optCorruptedId).getPrincipal() == idB)
+func initiatorNonInjectiveAgreement(l *ll.LabeledLibrary, idA, idB p.Principal, naT, nbT tm.Term) (optCorruptedId option[p.Id]) {
+	aId := p.principalId(idA)
+	bId := p.principalId(idB)
+	finishIWitness := l.EventOccursImpliesEventInv(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT }))
+	if tr.containsCorruptId(finishIWitness.getCorruptIds(), set[p.Id]{ aId, bId }) {
+        assert set[p.Id]{ aId, bId } == set[p.Id]{ aId } union set[p.Id]{ bId }
+        GetNslLabeling().containsCorruptIdSplit(finishIWitness.getCorruptIds(), set[p.Id]{ aId }, set[p.Id]{ bId })
+        if tr.containsCorruptId(finishIWitness.getCorruptIds(), set[p.Id]{ aId }) {
+		    optCorruptedId = some(aId)
+	    } else {
+            optCorruptedId = some(bId)
+        }
+	}
+}
+
+ghost
+decreases
+requires l.Mem()
+requires l.Ctx() == GetNslContext()
+requires l.Snapshot().eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT }))
+ensures  l.Mem()
+ensures  l.ImmutableState() == old(l.ImmutableState())
+ensures  l.Snapshot() == old(l.Snapshot())
+ensures  l.InjectiveAgreement(idA, idB, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT }), ev.NewEvent(Respond, RespondParams{ idA, idB, naT, nbT }), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(l.Snapshot().eventOccursWitness(idA, ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT })).getCorruptIds(), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+ensures  optCorruptedId != none[p.Id] ==>
+	(get(optCorruptedId).getPrincipal() == idA || get(optCorruptedId).getPrincipal() == idB)
+func initiatorInjectiveAgreement(l *ll.LabeledLibrary, idA, idB p.Principal, naT, nbT tm.Term) (optCorruptedId option[p.Id]) {
+	optCorruptedId = initiatorNonInjectiveAgreement(l, idA, idB, naT, nbT)
+	if optCorruptedId == none[p.Id] {
+		event := ev.NewEvent(FinishI, FinishIParams{ idA, idB, naT, nbT })
+		l.UniqueEventIsUnique(idA, event)
+		assert l.EventIsUnique(idA, event)
+	}
+}

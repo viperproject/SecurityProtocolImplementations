@@ -1,0 +1,18 @@
+#ifndef PROTOCOL_SPECIFIC_EVENT_LEMMA
+#define PROTOCOL_SPECIFIC_EVENT_LEMMA
+
+#include "event.gh"
+#include "event_functions.gh"
+#include "protocol_specific_pke_definition.gh"
+#include "trace_entry.gh"
+#include "trace_entry_helpers.gh"
+
+// This file declares a lemma that must be proven by a protocol after instantiating
+// this library. The lemma expresses that the protocol-specific definition of `event_pure_pred`
+// satisfies monotonicity.
+
+lemma void eventPurePredMonotonic(Trace t1, Trace t2, int principal, ParameterizedEvent e, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& event_pure_pred(e, principal, t1) == true &*& PkeCtxt(pkePred);
+    ensures event_pure_pred(e, principal, t2) == true &*& PkeCtxt(pkePred);
+
+#endif

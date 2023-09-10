@@ -1,0 +1,64 @@
+package common
+
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+
+
+// because we cannot declare Event to be an interface
+// we do this indirection by having an event type and
+// some parameters
+const SendSidI = EventType(1) // before sending message with tag 1
+const SendSidR = EventType(2) // before sending message with tag 2
+const SendFirstInit = EventType(3) // before sending first message with tag 4
+const ReceivedFirstResp = EventType(4) // after receiving first message with tag 4
+
+
+type SendSidIParams struct {
+	a p.Principal
+	b p.Principal
+	ekI tm.Term
+	epkI tm.Term
+}
+
+type SendSidRParams struct {
+	a p.Principal
+	b p.Principal
+	bSess uint32
+	epkI tm.Term
+	ekR tm.Term
+	kIR tm.Term
+	kRI tm.Term
+}
+
+type SendFirstInitParams struct {
+	a p.Principal
+	b p.Principal
+	aSess uint32
+	bSess uint32
+	ekI tm.Term
+	epkI tm.Term
+	ekR tm.Term
+	kIR tm.Term
+	kRI tm.Term
+}
+
+type ReceivedFirstRespParams struct {
+	a p.Principal
+	b p.Principal
+	aSess uint32
+	bSess uint32
+	ekI tm.Term
+	epkI tm.Term
+	ekR tm.Term
+	kIR tm.Term
+	kRI tm.Term
+}
+
+
+// optional declaration of subtypes:
+SendSidIParams implements EventParams
+SendSidRParams implements EventParams
+SendFirstInitParams implements EventParams
+ReceivedFirstRespParams implements EventParams

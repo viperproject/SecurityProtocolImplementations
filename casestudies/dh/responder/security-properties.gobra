@@ -1,0 +1,76 @@
+package responder
+
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import ll "github.com/viperproject/ReusableProtocolVerificationLibrary/labeledlibrary"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/dh/common"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+
+
+ghost
+requires b.Mem(xT, yT, sharedSecretT) && b.Vers(xT, yT, sharedSecretT) == 2
+ensures  b.Mem(xT, yT, sharedSecretT) && b.Vers(xT, yT, sharedSecretT) == 3
+func (b *B) proveSecurityProperties(xT, yT, sharedSecretT tm.Term) {
+	unfold b.Mem(xT, yT, sharedSecretT)
+	// we show that the responder injectively agrees with the initiator
+	// on x, y, and the shared secret
+	responderInjectiveAgreement(b.llib, b.IdA, b.IdB, xT, yT, sharedSecretT)
+	
+	// we show now that the shared secret is indeed secret:
+	b.llib.SecrecyLemma(sharedSecretT, set[p.Id]{ p.principalId(b.IdA), p.principalId(b.IdB) })
+
+	b.Version = 3
+	fold b.Mem(xT, yT, sharedSecretT)
+}
+
+ghost
+decreases
+requires l.Mem()
+requires l.Ctx() == GetDhContext()
+requires l.Snapshot().eventOccurs(idB, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT }))
+ensures  l.Mem()
+ensures  l.ImmutableState() == old(l.ImmutableState())
+ensures  l.Snapshot() == old(l.Snapshot())
+ensures  l.NonInjectiveAgreement(idB, idA, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT }), ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(l.Snapshot().eventOccursWitness(idB, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT })).getCorruptIds(), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+ensures  optCorruptedId != none[p.Id] ==>
+	(get(optCorruptedId).getPrincipal() == idA || get(optCorruptedId).getPrincipal() == idB)
+func responderNonInjectiveAgreement(l *ll.LabeledLibrary, idA, idB p.Principal, xT, yT, sharedSecretT tm.Term) (optCorruptedId option[p.Id]) {
+	aId := p.principalId(idA)
+	bId := p.principalId(idB)
+	finishRWitness := l.EventOccursImpliesEventInv(idB, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT }))
+	if tr.containsCorruptId(finishRWitness.getCorruptIds(), set[p.Id]{ aId, bId }) {
+        assert set[p.Id]{ aId, bId } == set[p.Id]{ aId } union set[p.Id]{ bId }
+        GetDhLabeling().containsCorruptIdSplit(finishRWitness.getCorruptIds(), set[p.Id]{ aId }, set[p.Id]{ bId })
+        if tr.containsCorruptId(finishRWitness.getCorruptIds(), set[p.Id]{ aId }) {
+		    optCorruptedId = some(aId)
+	    } else {
+            optCorruptedId = some(bId)
+        }
+	}
+}
+
+ghost
+decreases
+requires l.Mem()
+requires l.Ctx() == GetDhContext()
+requires l.Snapshot().eventOccurs(idB, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT }))
+ensures  l.Mem()
+ensures  l.ImmutableState() == old(l.ImmutableState())
+ensures  l.Snapshot() == old(l.Snapshot())
+ensures  l.InjectiveAgreement(idB, idA, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT }), ev.NewEvent(FinishI, FinishIParams{ idA, idB, xT, yT, sharedSecretT }), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(l.Snapshot().eventOccursWitness(idB, ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT })).getCorruptIds(), set[p.Id]{ p.principalId(idA), p.principalId(idB) })
+ensures  optCorruptedId != none[p.Id] ==>
+	(get(optCorruptedId).getPrincipal() == idA || get(optCorruptedId).getPrincipal() == idB)
+func responderInjectiveAgreement(l *ll.LabeledLibrary, idA, idB p.Principal, xT, yT, sharedSecretT tm.Term) (optCorruptedId option[p.Id]) {
+	optCorruptedId = responderNonInjectiveAgreement(l, idA, idB, xT, yT, sharedSecretT)
+	if optCorruptedId == none[p.Id] {
+		event := ev.NewEvent(FinishR, FinishRParams{ idA, idB, xT, yT, sharedSecretT })
+		l.UniqueEventIsUnique(idB, event)
+		assert l.EventIsUnique(idB, event)
+	}
+}

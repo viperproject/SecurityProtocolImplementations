@@ -1,0 +1,11 @@
+#ifndef PROTOCOL_SPECIFIC_EVENT_PARAMS
+#define PROTOCOL_SPECIFIC_EVENT_PARAMS
+
+// This file defines a dummy event parameter against which the library is verified, i.e.,
+// the library's proof is parametric in the event parameter.
+// To verify implementations of a particular protocol, this event parameter is instantiated
+// in a protocol-specific way.
+
+#define EVENT_PARAMS  | Dummy;
+
+#endif

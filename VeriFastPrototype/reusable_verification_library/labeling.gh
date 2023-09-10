@@ -1,0 +1,251 @@
+#ifndef LABELING
+#define LABELING
+
+#include "listex.gh"
+#include "protocol_specific_pke_definition.gh"
+#include "term.gh"
+#include "trace_entry.gh"
+#include "trace_entry_helpers.gh"
+
+
+fixpoint Label getUnderspecifiedLabel(Term t);
+
+// Gets labels for a given term
+fixpoint Label getLabel(Term t) {
+    switch (t) {
+        case integer(value): return Public;
+        case stringTerm(str): return Public;
+        case encrypt(pk, plaintext): return Public;
+        case hash(term): return Public;
+        case nonce(term, l): return l;
+        case publicKey(str_k): return Public;
+        case tuple2(Term1, Term2): return getUnderspecifiedLabel(t);
+        case tuple3(Term1, Term2, Term3): return getUnderspecifiedLabel(t);
+        case tuple4(Term1, Term2, Term3, Term4): return getUnderspecifiedLabel(t);
+    }
+}
+
+// Gets the private key's label for a public key
+fixpoint Label getSkLabel(Term t) {
+    return isPk(t) ? getLabel(getSecretKey(t)) : Public;
+}
+
+fixpoint bool canFlowInternal(Label l1, Label l2, list<int>corruptIds) {
+    switch (l1) {
+        case Public:
+            return true;
+        case Readers(l1_readers):
+            return switch (l2) {
+              case Public:
+                return containsCorruptId(corruptIds, l1_readers);
+              case Readers(l2_readers):
+                return containsCorruptId(corruptIds, l1_readers) || containsIds(l1_readers, l2_readers);
+            };
+    }
+}
+
+fixpoint bool canFlow<t>(trace<EventParams> t, Label l1, Label l2) {
+    return canFlowInternal(l1, l2, getCorruptIds(t));
+}
+
+lemma void canFlowReflexive<t>(Label l1, trace<EventParams> t);
+    requires true;
+    ensures canFlow(t, l1, l1) == true;
+
+lemma void canFlowMonotonic<t>(trace<EventParams> t1, trace<EventParams> t2, Label l1, Label l2);
+    requires isSuffix(t1, t2) == true && canFlow(t1, l1, l2) == true;
+    ensures  canFlow(t2, l1, l2) == true;
+
+lemma void flowsToPublicCanFlow(trace<EventParams> tr, Label l1, Label l2);
+    requires canFlow(tr, l1, Public) == true;
+    ensures  canFlow(tr, l1, l2) == true;
+
+lemma void canFlowTransitive(trace<EventParams> tr, Label l1, Label l2, Label l3);
+    requires canFlow(tr, l1, l2) == true &*& canFlow(tr, l2, l3) == true; 
+    ensures canFlow(tr, l1, l3) == true;
+
+fixpoint bool isValid(trace<EventParams> t, Term term, fixpoint (trace<EventParams>, Term, Term, bool) p)
+//    decreases getTermHeight(term);
+{ 
+    switch (term) {
+        case integer(value):
+            return true;
+        case stringTerm(str):
+            return true;
+        case encrypt(pk, plaintext):
+            return isValid(t, pk, p) &&
+                isValid(t, plaintext, p) && 
+                canFlow(t, getLabel(plaintext), getSkLabel(pk)) &&
+                (canFlow(t, getLabel(plaintext), Public) || p(t, plaintext, pk));
+        case hash(ht):
+            return isValid(t, ht, p);
+        case publicKey(pkeKey):
+            return isValid(t, pkeKey, p);
+        case nonce(bytes, l):
+            return onlyNonceOccurs(t, term);
+        case tuple2(Term1, Term2):
+            return isValid(t, Term1, p) && isValid(t, Term2, p);
+        case tuple3(Term1, Term2, Term3):
+            return isValid(t, Term1, p) && isValid(t, Term2, p) && isValid(t, Term3, p);
+        case tuple4(Term1, Term2, Term3, Term4):
+        return isValid(t, Term1, p) && isValid(t, Term2, p) && isValid(t, Term3, p) && isValid(t, Term4, p);
+    }
+    /*
+    return getTermType(term) == 0 ? nonceOccurs(t, term, getNonceLabel(term)) : // nonce
+        getTermType(term) == 1 ? isValid(t, getFirst(term), p) && isValid(t, getSecond(term), p) : // tuple2
+        getTermType(term) == 2 ? isValid(t, getFirst(term), p) && isValid(t, getSecond(term), p) && isValid(t, getThird(term), p) : // tuple3
+        getTermType(term) == 3 ? isValid(t, getFirst(term), p) && isValid(t, getSecond(term), p) && isValid(t, getThird(term), p)&& isValid(t, getForth(term), p) : // tuple4
+        getTermType(term) == 4 ? isValid(t, getInput(term), p) : // hash
+        getTermType(term) == 5 ? isValid(t, getSecretKey(term), p) : // publicKey
+        getTermType(term) == 6 ? isValid(t, getPublicKey(term), p) && isValid(t, getPlaintext(term), p) && canFlow(t, getLabel(getPlaintext(term)), getSkLabel(getPublicKey(term))) && (canFlow(t, getLabel(getPlaintext(term)), Public) || p(t, getPlaintext(term), getPublicKey(term))): // encrypt
+        getTermType(term) == 7 ? true : // stringTerm
+        getTermType(term) == 8 ? true : // integer
+            false;
+    */
+}
+
+lemma void isValidMonotonic(trace<EventParams> t1, trace<EventParams> t2, Term term, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& isValid(t1, term, pkePred) == true &*& PkeCtxt(pkePred);
+    ensures  isValid(t2, term, pkePred) == true &*& PkeCtxt(pkePred);
+
+fixpoint bool isLabeled(Term t, trace<EventParams> tr, Label l, PkePred pkePred){
+    return isValid(tr, t, pkePred) && getLabel(t) == l;
+}
+
+lemma void isLabeledMonotonic(Term t, trace<EventParams> tr1, trace<EventParams> tr2, Label l, PkePred pkePred);
+    requires isSuffix(tr1, tr2) == true &*& isLabeled(t, tr1, l, pkePred) == true &*& PkeCtxt(pkePred);
+    ensures  isLabeled(t, tr2, l, pkePred) == true &*& PkeCtxt(pkePred);
+
+fixpoint bool isMsg<t>(trace<EventParams> t, Term term, Label label, fixpoint (trace<EventParams>, Term, Term, bool) p) {
+    return isValid(t, term, p) && canFlow(t, getLabel(term), label);
+}
+
+lemma void isMsgMonotonic(trace<EventParams> t1, trace<EventParams> t2, Term term, Label label, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& isMsg(t1, term, label, pkePred) == true &*& PkeCtxt(pkePred);
+    ensures  isMsg(t2, term, label, pkePred) == true &*& PkeCtxt(pkePred);
+
+lemma void isMsgTransitive(trace<EventParams> tr, Term t1, Label l1, Label l2, PkePred pkePred);
+    requires isMsg(tr, t1, l1, pkePred) && canFlow(tr, l1, l2);
+    ensures isMsg(tr, t1, l2, pkePred) == true;
+
+fixpoint bool isPublishable<t>(trace<EventParams> t, Term term, fixpoint (trace<EventParams>, Term, Term, bool) p){
+    return isMsg(t, term, Public, p);
+}
+
+lemma void isPublishableMonotonic<t>(trace<EventParams> t1, trace<EventParams> t2, Term term, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& isPublishable(t1, term, pkePred) == true &*& PkeCtxt(pkePred);
+    ensures isPublishable(t2, term, pkePred) == true &*& PkeCtxt(pkePred);
+
+fixpoint bool isSecret(trace<EventParams> tr, Term term, Label l, PkePred pkePred) {
+    return isLabeled(term, tr, l, pkePred);
+}
+
+fixpoint bool isPrivateDecKey(trace<EventParams> tr, int owner, Term sk, PkePred pkePred){
+    return isSecret(tr, sk, Readers(cons(owner, nil)), pkePred);
+}
+
+fixpoint bool isSecretKey(trace<EventParams> tr, int owner, Term sk, int keyType, PkePred pkePred){
+    return (keyType == 1) ? isPrivateDecKey(tr, owner, sk, pkePred) :  false;
+}
+
+lemma void isSecretKeyMonotonic(Trace tr1, Trace tr2, int id, Term skT, int c, PkePred pkePred);
+    requires isSecretKey(tr1, id, skT, c, pkePred) == true &*& isSuffix(tr1, tr2) == true &*& c == 1 &*& PkeCtxt(pkePred);
+    ensures  isSecretKey(tr2, id, skT, c, pkePred) == true &*& PkeCtxt(pkePred);
+
+fixpoint bool isPublicEncKey(trace<EventParams> tr, int owner, Term pk,  Term sk, int keyType, PkePred pkePred) {
+    return isPublishable(tr, pk, pkePred) &&
+        isPrivateDecKey(tr, owner, sk, pkePred) &&
+        // pk == publicKey(sk);
+        isPk(pk);
+}
+
+fixpoint bool isPublicKey(trace<EventParams> tr, int owner, Term pk, Term sk, int keyType, PkePred pkePred){
+    return (keyType == 1) ? isPublicEncKey(tr, owner, pk, sk, keyType, pkePred) :  false;
+}
+
+lemma void isPublicKeyMonotonic(Trace tr1, Trace tr2, int id, Term skT, int c, PkePred pkePred);
+  requires isPublicKey(tr1, id, publicKey(skT), skT, c, pkePred) == true &*& isSuffix(tr1, tr2) == true &*& c == 1 &*& PkeCtxt(pkePred);
+  ensures  isPublicKey(tr2, id, publicKey(skT), skT, c, pkePred) == true &*& PkeCtxt(pkePred); 
+
+// since this library is just a prototype, we do not support
+// usages yet. Otherwise, we would check here whether `sk`'s usage
+// is public key encryption.
+fixpoint bool isPkeKey(Term sk) {
+    return true;
+}
+
+fixpoint bool isPublicEncKeyExistential(trace<EventParams> t, Term pk, Label l, PkePred pkePred) {
+    return isPublishable(t, pk, pkePred) &&
+        isPk(pk) &&
+        isSecret(t, getSecretKey(pk), l, pkePred);
+}
+
+fixpoint bool canEncrypt(trace<EventParams> t, Term msg, Term pk, PkePred pkePred) {
+    return isPublishable(t, pk, pkePred) &&
+        isPkeKey(getSecretKey(pk)) &&
+        isMsg(t, msg, getSkLabel(pk), pkePred) &&
+        (isPublicEncKeyExistential(t, pk, getSkLabel(pk), pkePred) ? pkePred(t, msg, pk) : true);  
+}
+
+lemma void ciphertextIsPublishable(trace<EventParams> t,  Term msg, Term pk, PkePred pkePred);
+    requires canEncrypt(t, msg, pk, pkePred) || (isPublishable(t, msg, pkePred) && isPublishable(t, pk, pkePred));
+    ensures  isPublishable(t, encrypt(pk, msg), pkePred) == true;
+
+fixpoint bool canDecrypt(trace<EventParams> tr, Term ciphertext, Term sk, int owner, PkePred pkePred) {
+    return isPublishable(tr, ciphertext, pkePred) &&
+        (isPublishable(tr, sk, pkePred) || isPrivateDecKey(tr, owner, sk, pkePred));
+}
+
+fixpoint bool wasDecrypted<t>(trace<EventParams> tr, Term msg, Term sk, int skOwner, PkePred pkePred){
+    return isLabeled(sk, tr, Readers(cons(skOwner, nil)), pkePred) ?
+        (isMsg(tr, msg, Readers(cons(skOwner, nil)), pkePred) &&
+            isPrivateDecKey(tr, skOwner, sk, pkePred) ? (isPublishable(tr, msg, pkePred) || pkePred(tr,  msg, publicKey(sk))) : true) : true;
+}
+
+lemma void canDecryptWithPublicSk(trace<EventParams> tr, Term ciphertext, Term sk, int skOwner, PkePred pkePred);
+    requires isPublishable(tr, ciphertext, pkePred) && isPublishable(tr, sk, pkePred);
+    ensures  canDecrypt(tr, ciphertext, sk, skOwner, pkePred) == true;
+
+lemma void decryptSatisfiesInvariant<t>(trace<EventParams> tr, Term msg, Term sk, int skOwner, PkePred pkePred);
+    requires canDecrypt(tr, encrypt(publicKey(sk), msg), sk, skOwner, pkePred) == true;
+    ensures  wasDecrypted(tr, msg, sk, skOwner, pkePred) == true;
+
+lemma void plaintextIsPublishableForPublicSk(trace<EventParams> tr, Term msg, Term sk, int skOwner, PkePred pkePred);
+    requires isPublishable(tr, encrypt(publicKey(sk), msg), pkePred) && isPublishable(tr, sk, pkePred);
+    ensures  isPublishable(tr, msg, pkePred) == true;
+
+lemma void publishableImpliesCorruption(trace<EventParams> t,  Term term, Label l, list<int> ids, PkePred pkePred);
+    requires isPublishable(t, term, pkePred) && l == Readers(ids) && canFlow(t, l, getLabel(term));
+    ensures  containsCorruptId(getCorruptIds(t), ids) == true;
+
+// TODO: this lemma is taken from Gobra and has not been proven in VeriFast yet
+lemma void isMsgTupleTwoCreate(trace<EventParams> tr, Term t1, Term t2, Label l, PkePred pkePred);
+    requires isMsg(tr, t1, l, pkePred) && isMsg(tr, t2, l, pkePred);
+    ensures  isMsg(tr, tuple2(t1, t2), l, pkePred) == true; 
+
+// TODO: this lemma is taken from Gobra and has not been proven in VeriFast yet
+lemma void isMsgTupleThreeCreate(trace<EventParams> tr, Term t1, Term t2, Term t3, Label l, PkePred pkePred);
+    requires isMsg(tr, t1, l, pkePred) && isMsg(tr, t2, l, pkePred) && isMsg(tr, t3, l, pkePred);
+    ensures  isMsg(tr, tuple3(t1, t2, t3), l, pkePred) == true;
+
+// TODO: this lemma is taken from Gobra and has not been proven in VeriFast yet
+lemma void isMsgTupleFourCreate(trace<EventParams> tr, Term t1, Term t2, Term t3, Term t4, Label l, PkePred pkePred);
+    requires isMsg(tr, t1, l, pkePred) && isMsg(tr, t2, l, pkePred) && isMsg(tr, t3, l, pkePred) && isMsg(tr, t4, l, pkePred);
+    ensures  isMsg(tr, tuple4(t1, t2, t3, t4), l, pkePred) == true; 
+
+// TODO: this lemma is taken from Gobra and has not been proven in VeriFast yet
+lemma void isMsgTupleTwoResolve(trace<EventParams> tr, Term t1, Term t2, Label l, PkePred pkePred);
+    requires isMsg(tr, tuple2(t1, t2), l, pkePred) == true;
+    ensures  isMsg(tr, t1, l, pkePred) && isMsg(tr, t2, l, pkePred); 
+
+// TODO: this lemma is taken from Gobra and has not been proven in VeriFast yet
+lemma void isMsgTupleThreeResolve(trace<EventParams> tr, Term t1, Term t2, Term t3, Label l, PkePred pkePred);
+    requires isMsg(tr, tuple3(t1, t2, t3), l, pkePred) == true;
+    ensures  isMsg(tr, t1, l, pkePred) && isMsg(tr, t2, l, pkePred) && isMsg(tr, t3, l, pkePred); 
+
+// TODO: this lemma is taken from Gobra and has not been proven in VeriFast yet
+lemma void isMsgTupleFourResolve(trace<EventParams> tr, Term t1, Term t2, Term t3, Term t4, Label l, PkePred pkePred);
+    requires isMsg(tr, tuple4(t1, t2, t3, t4), l, pkePred) == true;
+    ensures  isMsg(tr, t1, l, pkePred) && isMsg(tr, t2, l, pkePred) && isMsg(tr, t3, l, pkePred) && isMsg(tr, t4, l, pkePred); 
+
+#endif

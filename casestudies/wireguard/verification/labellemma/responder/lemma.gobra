@@ -1,0 +1,681 @@
+package labelLemmaResponder
+
+import arb "github.com/viperproject/ReusableProtocolVerificationLibrary/arbitrary"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/common"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma/common"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/responder"
+
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+ensures  pkrT == Term_pkR(ltkT)
+ensures  GetWgLabeling().IsLabeled(snapshot, pkrT, label.Public())
+ensures  GetWgLabeling().IsPublicDhKey(snapshot, bId, pkrT, ltkT, WgKey)
+func CreatePkr(snapshot tr.TraceEntry, ltkT tm.Term, bId p.Id) (pkrT tm.Term) {
+    pkrT = Term_pkR(ltkT)
+    assert GetWgLabeling().IsValid(snapshot, tm.generator())
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  epkrT == Term_epkR(ekrT)
+ensures  GetWgLabeling().IsLabeled(snapshot, epkrT, label.Public())
+func CreateEpkr(snapshot tr.TraceEntry, ekrT tm.Term, bSessId p.Id) (epkrT tm.Term) {
+    epkrT = Term_epkR(ekrT)
+    assert GetWgLabeling().IsValid(snapshot, tm.generator())
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+ensures  h1T == Term_h1(ltkT)
+ensures  GetWgLabeling().IsLabeledPrecise(snapshot, h1T, label.Public())
+func CreateH1(snapshot tr.TraceEntry, ltkT tm.Term, bId p.Id) (h1T tm.Term) {
+    h0T := CreateH0(snapshot)
+    pkrT := CreatePkr(snapshot, ltkT, bId)
+    h1T = Term_h1(ltkT)
+    GetWgLabeling().ApplyHash2Tuple(snapshot, h0T, pkrT, label.Public(), label.Public())
+}
+
+ghost
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  c1T == Term_c1(epkIX)
+ensures  GetWgLabeling().IsSecretPrecise(snapshot, c1T, label.Public(), u.KdfKey(WgC1))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ==>
+    GetWgLabeling().GetLabel(c1T) == Label_c1()
+ensures  GetWgUsage().GetKdfUsageString(c1T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC1
+func CreateC1(snapshot tr.TraceEntry, epkIX tm.Term, aSessId p.Id) (c1T tm.Term) {
+    usageCtx := GetWgUsage()
+    c0T := CreateC0(snapshot)
+    epkIL := GetWgLabeling().GetLabel(epkIX)
+    c1T = Term_c1(epkIX)
+    kdfInput := tm.tuple2(c0T, epkIX)
+    assert usageCtx.Tuple2Usage(kdfInput, MIN_GET_USAGE_INTERNAL_MEASURE) == some(u.KdfKey(WgC1Input))
+    assert GetWgLabeling().nestedMeet(kdfInput, getTupleSeq(kdfInput), 0) == label.Meet(label.Public(), epkIL)
+    assert GetWgLabeling().IsValid(snapshot, kdfInput)
+    assert usageCtx.GetUsageInternal(kdfInput, MIN_GET_USAGE_INTERNAL_MEASURE + 1) == some(u.KdfKey(WgC1Input))
+    usageCtx.GetUsageInternalIndependentOf2ndParam(kdfInput, MIN_GET_USAGE_INTERNAL_MEASURE + 1, MIN_GET_USAGE_INTERNAL_MEASURE)
+    assert usageCtx.KdfUsage(c1T, usageCtx.GetKdfUsageString(kdfInput, MIN_GET_USAGE_INTERNAL_MEASURE + 2)) == some(u.KdfKey(WgC1))
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c1T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  h2T == Term_h2(ltkT, epkIX)
+ensures  GetWgLabeling().IsLabeled(snapshot, h2T, label.Public())
+func CreateH2(snapshot tr.TraceEntry, ltkT, epkIX tm.Term, aId, bId p.Id) (h2T tm.Term) {
+    h1T := CreateH1(snapshot, ltkT, bId)
+    h2T = Term_h2(ltkT, epkIX)
+    GetWgLabeling().ApplyHash2Tuple(snapshot, h1T, epkIX, label.Public(), label.Public())
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  c2T == Term_c2(ltkT, epkIX)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, c2T, GetWgLabeling().GetLabel(tm.exp(epkIX, ltkT)), u.KdfKey(WgC2))
+ensures  GetWgLabeling().IsMsg(snapshot, c2T, label.Readers(set[p.Id]{ bId }))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ==>
+    GetWgLabeling().GetLabel(c2T) == Label_c2(aSessId, bId) &&
+    GetWgLabeling().IsSecretPrecise(snapshot, c2T, label.Join(label.Readers(set[p.Id]{ aSessId }), label.Readers(set[p.Id]{ bId })), u.KdfKey(WgC2))
+ensures  GetWgUsage().GetKdfUsageString(c2T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC2
+func CreateC2(snapshot tr.TraceEntry, ltkT, epkIX tm.Term, aSessId, bId p.Id) (c2T tm.Term) {
+    usageCtx := GetWgUsage()
+    justBL := label.Readers(set[p.Id]{ bId })
+    aJoinBL := label.Join(label.Readers(set[p.Id]{ aSessId }), label.Readers(set[p.Id]{ bId }))
+    c1T := CreateC1(snapshot, epkIX, aSessId)
+    c2T = Term_c2(ltkT, epkIX)
+    rhsL := GetWgLabeling().GetLabel(tm.exp(epkIX, ltkT))
+    GetWgLabeling().CanFlowReflexive(snapshot, justBL)
+    GetWgLabeling().CanFlowReflexive(snapshot, rhsL)
+
+    if exists ekI tm.Term :: epkIX == tm.exp(tm.generator(), ekI) {
+        // get witness
+        ekI := arb.GetArbTerm()
+        assume epkIX == tm.exp(tm.generator(), ekI)
+    } else if !epkIX.IsGenerator() {
+        GetWgLabeling().FlowsToPublicCanFlow(snapshot, GetWgLabeling().GetLabel(epkIX), justBL)
+    }
+    ApplyKdfBounded(1, snapshot, c1T, tm.exp(epkIX, ltkT), label.Public(), label.Public(), rhsL, justBL, u.KdfKey(WgC1), some(u.KdfKey(WgC2)))
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(1, snapshot, c1T, tm.exp(epkIX, ltkT), label.Public(), aJoinBL, u.KdfKey(WgC1), some(u.KdfKey(WgC2)))
+    }
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c2T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  k1T == Term_k1(ltkT, epkIX)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, k1T, GetWgLabeling().GetLabel(tm.exp(epkIX, ltkT)), u.AeadKey(WgK1))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aId, epkIX, WgEphemeralSk) ==>
+    GetWgLabeling().GetLabel(k1T) == Label_k1(aId, bId) &&
+    GetWgLabeling().IsSecretPrecise(snapshot, k1T, label.Join(label.Readers(set[p.Id]{ aId }), label.Readers(set[p.Id]{ bId })), u.AeadKey(WgK1))
+func CreateK1(snapshot tr.TraceEntry, ltkT, epkIX tm.Term, aId, bId p.Id) (k1T tm.Term) {
+    aJoinBL := label.Join(label.Readers(set[p.Id]{ aId }), label.Readers(set[p.Id]{ bId }))
+    c1T := CreateC1(snapshot, epkIX, aId)
+    k1T = Term_k1(ltkT, epkIX)
+    rhsL := GetWgLabeling().GetLabel(tm.exp(epkIX, ltkT))
+    GetWgLabeling().CanFlowReflexive(snapshot, rhsL)
+    ApplyKdf(2, snapshot, c1T, tm.exp(epkIX, ltkT), label.Public(), rhsL, u.KdfKey(WgC1), some(u.AeadKey(WgK1)))
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(2, snapshot, c1T, tm.exp(epkIX, ltkT), label.Public(), aJoinBL, u.KdfKey(WgC1), some(u.AeadKey(WgK1)))
+    }
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aId, ltpkT, WgKey)
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  cpkiT == Term_c_pkI(ltkT, ltpkT, epkIX)
+ensures  GetWgLabeling().IsLabeled(snapshot, cpkiT, label.Public())
+func CreateCpki(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX tm.Term, aId, bId p.Id) (cpkiT tm.Term) {
+    k1T := CreateK1(snapshot, ltkT, epkIX, aId, bId)
+    h2T := CreateH2(snapshot, ltkT, epkIX, aId, bId)
+    cpkiT = Term_c_pkI(ltkT, ltpkT, epkIX)
+    assert GetWgLabeling().IsPublishable(snapshot, tm.zeroString(12))
+    assert GetWgLabeling().IsValidAead(snapshot, k1T, tm.zeroString(12), ltpkT, label.Public(), h2T)
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aId, ltpkT, WgKey)
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  h3T == Term_h3(ltkT, ltpkT, epkIX)
+ensures  h3Props(snapshot, h3T, ltpkT, epkIX)
+func CreateH3(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX tm.Term, aId, bId p.Id) (h3T tm.Term) {
+    h2T := CreateH2(snapshot, ltkT, epkIX, aId, bId)
+    cpkiT := CreateCpki(snapshot, ltkT, ltpkT, epkIX, aId, bId)
+    h3T = Term_h3(ltkT, ltpkT, epkIX)
+    GetWgLabeling().ApplyHash2Tuple(snapshot, h2T, cpkiT, label.Public(), label.Public())
+}
+
+ghost
+pure func h3Props(snapshot tr.TraceEntry, h3T, ltpkT, epkIX tm.Term) bool {
+    return GetWgLabeling().IsLabeled(snapshot, h3T, label.Public()) &&
+        GetWgUsage().hasH3Structure(h3T) &&
+        GetWgUsage().getPkIFromH3(h3T) == ltpkT &&
+        GetWgUsage().getEpkIFromH3(h3T) == epkIX
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsPublishable(snapshot, epkIX)
+ensures  k2T == Term_k2(ltkT, ltpkT, epkIX)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, k2T, GetWgLabeling().GetLabel(tm.exp(epkIX, ltkT)), u.AeadKey(WgK2))
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, k2T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bId }), u.AeadKey(WgK2))
+ensures  GetWgLabeling().IsMsg(snapshot, k2T, label.Readers(set[p.Id]{ bId }))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ==>
+    GetWgLabeling().GetLabel(k2T) == Label_k2(aSessId, bId) &&
+    GetWgLabeling().IsSecretPrecise(snapshot, k2T, label.Join(label.Readers(set[p.Id]{ aSessId }), label.Readers(set[p.Id]{ bId })), u.AeadKey(WgK2))
+func CreateK2(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX tm.Term, aSessId, bId p.Id) (k2T tm.Term) {
+    justBL := label.Readers(set[p.Id]{ bId })
+    aJoinBL := label.Join(label.Readers(set[p.Id]{ aSessId.getPrincipalId() }), justBL)
+    aSessJoinBL := label.Join(label.Readers(set[p.Id]{ aSessId }), justBL)
+    c2T := CreateC2(snapshot, ltkT, epkIX, aSessId, bId)
+    k2T = Term_k2(ltkT, ltpkT, epkIX)
+    lhsL := GetWgLabeling().GetLabel(tm.exp(epkIX, ltkT))
+    rhsL := GetWgLabeling().GetLabel(tm.exp(ltpkT, ltkT))
+    GetWgLabeling().CanFlowReflexive(snapshot, rhsL)
+    ApplyKdfBounded(2, snapshot, c2T, tm.exp(ltpkT, ltkT), lhsL, justBL, aJoinBL, aJoinBL, u.KdfKey(WgC2), some(u.AeadKey(WgK2)))
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(2, snapshot, c2T, tm.exp(ltpkT, ltkT), aSessJoinBL, aJoinBL, u.KdfKey(WgC2), some(u.AeadKey(WgK2)))
+        GetWgLabeling().PrincipalsJoinFlowsToSessions(snapshot, aSessId, bId)
+    }
+    GetWgLabeling().SimplifyJoinToReaders(snapshot, k2T, aSessId.getPrincipalId(), bId)
+    GetWgLabeling().CanFlowReflexive(snapshot, justBL)
+    GetWgLabeling().CanFlowResolveMeetRhs(snapshot, GetWgLabeling().GetLabel(k2T), aJoinBL, justBL)
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+ensures  c3T == Term_c3(ltkT, ltpkT, epkIX)
+ensures  c3Props(snapshot, epkIX, c3T, aSessId, bId)
+// when computing c3, cpkI and cts have already been decrypted and their AEAD predicates applied
+func CreateC3(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX tm.Term, aSessId, bId p.Id) (c3T tm.Term) {
+    usageCtx := GetWgUsage()
+    bothL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bId })
+    aJoinBL := label.Join(label.Readers(set[p.Id]{ aSessId.getPrincipalId() }), label.Readers(set[p.Id]{ bId }))
+    aSessJoinBL := label.Join(label.Readers(set[p.Id]{ aSessId }), label.Readers(set[p.Id]{ bId }))
+    k2T := CreateK2(snapshot, ltkT, ltpkT, epkIX, aSessId, bId)
+    c2T := CreateC2(snapshot, ltkT, epkIX, aSessId, bId)
+    c3T = Term_c3(ltkT, ltpkT, epkIX)
+    rhsL := GetWgLabeling().GetLabel(tm.exp(ltpkT, ltkT))
+    GetWgLabeling().CanFlowReflexive(snapshot, rhsL)
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(1, snapshot, c2T, tm.exp(ltpkT, ltkT), aSessJoinBL, aJoinBL, u.KdfKey(WgC2), some(u.KdfKey(WgC3)))
+        GetWgLabeling().SimplifyJoinToReaders(snapshot, c3T, aSessId, bId)
+    } else {
+        GetWgLabeling().CanFlowTransitive(snapshot, bothL, GetWgLabeling().GetLabel(k2T), label.Public())
+    }
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c3T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+    assert GetWgUsage().GetKdfUsageString(c3T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC3
+}
+
+ghost
+pure func epkIXProps(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX tm.Term, aSessId p.Id) bool {
+    return GetWgLabeling().IsPublishable(snapshot, epkIX) &&
+        (!GetWgLabeling().IsPublishable(snapshot, Term_k2(ltkT, ltpkT, epkIX)) ==>
+            GetWgLabeling().IsPublicKeyExistential(snapshot, aSessId, epkIX, KeyTypeDh(), WgEphemeralSk))
+}
+
+ghost
+requires s1.isSuffix(s2)
+requires epkIXProps(s1, ltkT, ltpkT, epkIX, aSessId)
+ensures  epkIXProps(s2, ltkT, ltpkT, epkIX, aSessId)
+func epkIXPropsMonotonic(s1, s2 tr.TraceEntry, ltkT, ltpkT, epkIX tm.Term, aSessId p.Id) {
+    k2T := Term_k2(ltkT, ltpkT, epkIX)
+    GetWgLabeling().IsPublishableMonotonic(s1, s2, epkIX)
+    if GetWgLabeling().IsPublishable(s1, k2T) {
+        GetWgLabeling().IsPublishableMonotonic(s1, s2, k2T)
+    }
+    if !GetWgLabeling().IsPublishable(s2, k2T) {
+        GetWgLabeling().IsPublicKeyExistentialMonotonic(s1, s2, aSessId, epkIX, KeyTypeDh(), WgEphemeralSk)
+    }
+}
+
+ghost
+pure func c3Props(snapshot tr.TraceEntry, epkIX, c3T tm.Term, aSessId, bId p.Id) bool {
+    return GetWgUsage().hasC3Structure(c3T) &&
+        GetWgUsage().getEpkIFromC3(c3T) == epkIX &&
+        GetWgLabeling().IsLabeled(snapshot, GetWgUsage().getDhStaticFromC3(c3T), Label_DhStatic(aSessId.getPrincipalId(), bId)) &&
+        GetWgLabeling().IsSecretRelaxed(snapshot, c3T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bId }), u.KdfKey(WgC3)) &&
+        (GetWgLabeling().IsPublicKeyExistential(snapshot, aSessId, epkIX, KeyTypeDh(), WgEphemeralSk) ?
+            (GetWgLabeling().IsLabeledRelaxed(snapshot, c3T, label.Readers(set[p.Id]{ aSessId, bId })) &&
+                GetWgLabeling().IsLabeledPrecise(snapshot, c3T, Label_c3Precise(aSessId, bId)) &&
+                GetWgLabeling().IsLabeled(snapshot, c3T, Label_c3(aSessId, bId))) :
+            GetWgLabeling().IsPublishable(snapshot, c3T)) &&
+        GetWgUsage().GetKdfUsageString(c3T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC3
+}
+
+ghost
+pure func c3PropsCombined(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX, c3T tm.Term, aSessId, bId p.Id) bool {
+    return GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey) &&
+        GetWgLabeling().IsPublicKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, KeyTypeDh(), WgKey) &&
+        epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId) &&
+        c3T == Term_c3(ltkT, ltpkT, epkIX) &&
+        c3Props(snapshot, epkIX, c3T, aSessId, bId)
+}
+
+ghost
+requires s1.isSuffix(s2)
+requires c3PropsCombined(s1, ltkT, ltpkT, epkIX, c3T, aSessId, bId)
+ensures  c3PropsCombined(s2, ltkT, ltpkT, epkIX, c3T, aSessId, bId)
+func c3PropsCombinedMonotonic(s1, s2 tr.TraceEntry, ltkT, ltpkT, epkIX, c3T tm.Term, aSessId, bId p.Id) {
+    GetWgLabeling().IsSecretKeyMonotonic(s1, s2, bId, ltkT, KeyTypeDh(), WgKey)
+    GetWgLabeling().IsPublicKeyExistentialMonotonic(s1, s2, aSessId.getPrincipalId(), ltpkT, KeyTypeDh(), WgKey)
+    epkIXPropsMonotonic(s1, s2, ltkT, ltpkT, epkIX, aSessId)
+    CreateC3(s2, ltkT, ltpkT, epkIX, aSessId, bId)
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires (GetWgLabeling().IsPublishable(snapshot, Term_k2(ltkT, ltpkT, epkIX)) &&
+        GetWgLabeling().IsPublishable(snapshot, tsT)) ||
+    (GetWgLabeling().IsLabeled(snapshot, tsT, label.Public()) &&
+        sidIEventProps(snapshot, epkIX, aSessId, bId))
+ensures  ctsT == Term_c_ts(ltkT, ltpkT, epkIX, tsT)
+ensures  GetWgLabeling().IsLabeled(snapshot, ctsT, label.Public())
+func CreateCts(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX, tsT tm.Term, aSessId, bId p.Id) (ctsT tm.Term) {
+    // if k2T is publishable (in the case of corruption) then `IsValidAead` holds trivially
+    usageCtx := GetWgUsage()
+    bothL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bId })
+    k2T := CreateK2(snapshot, ltkT, ltpkT, epkIX, aSessId, bId)
+    h3T := CreateH3(snapshot, ltkT, ltpkT, epkIX, aSessId.getPrincipalId(), bId)
+    tsL := GetWgLabeling().GetLabel(tsT)
+    keyL := GetWgLabeling().GetLabel(k2T)
+    ctsT = Term_c_ts(ltkT, ltpkT, epkIX, tsT)
+    assert GetWgLabeling().IsPublishable(snapshot, tm.zeroString(12))
+    if GetWgLabeling().IsLabeled(snapshot, tsT, label.Public()) &&
+        sidIEventProps(snapshot, epkIX, aSessId, bId) {
+        assert exists ekI tm.Term :: epkIX == tm.exp(tm.generator(), ekI)
+        // get witness:
+        ekI := arb.GetArbTerm()
+        assume epkIX == tm.exp(tm.generator(), ekI)
+        GetWgLabeling().CanFlowTransitive(snapshot, tsL, bothL, keyL)
+    }
+    assert GetWgLabeling().IsValidAead(snapshot, k2T, tm.zeroString(12), tsT, GetWgLabeling().GetLabel(tsT), h3T)
+}
+
+ghost
+pure func sidIEventProps(snapshot tr.TraceEntry, epkIX tm.Term, aSessId, bId p.Id) bool {
+    return aSessId.getSession() != none[uint32] &&
+        (exists ekI tm.Term :: { tm.exp(tm.generator(), ekI) } (
+            epkIX == tm.exp(tm.generator(), ekI) &&
+            snapshot.eventOccurs(aSessId.getPrincipal(), sendSidIEv(ekI, epkIX, aSessId, bId))))
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bId, ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires (GetWgLabeling().IsPublishable(snapshot, Term_k2(ltkT, ltpkT, epkIX)) &&
+        GetWgLabeling().IsPublishable(snapshot, tsT)) ||
+    (GetWgLabeling().IsLabeled(snapshot, tsT, label.Public()) &&
+        sidIEventProps(snapshot, epkIX, aSessId, bId))
+ensures  h4T == Term_h4(ltkT, ltpkT, epkIX, tsT)
+ensures  h4Props(snapshot, h4T, ltkT, ltpkT, epkIX)
+func CreateH4(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX, tsT tm.Term, aSessId, bId p.Id) (h4T tm.Term) {
+    h3T := CreateH3(snapshot, ltkT, ltpkT, epkIX, aSessId.getPrincipalId(), bId)
+    ctsT := CreateCts(snapshot, ltkT, ltpkT, epkIX, tsT, aSessId, bId)
+    h4T = Term_h4(ltkT, ltpkT, epkIX, tsT)
+    GetWgLabeling().ApplyHash2Tuple(snapshot, h3T, ctsT, label.Public(), label.Public())
+}
+
+ghost
+pure func h4Props(snapshot tr.TraceEntry, h4T tm.Term, ltkT, ltpkT, epkIX tm.Term) bool {
+    return GetWgLabeling().IsLabeled(snapshot, h4T, label.Public()) &&
+        GetWgUsage().hasH4Structure(h4T) &&
+        GetWgUsage().getPkIFromH4(h4T) == ltpkT &&
+        GetWgUsage().getPkRFromH4(h4T) == tm.exp(tm.generator(), ltkT) &&
+        GetWgUsage().getEpkIFromH4(h4T) == epkIX
+}
+
+ghost
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  c4T == Term_c4(c3T, ekrT)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, c4T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() }), u.KdfKey(WgC4))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(c4T) == Label_c4(aSessId, bSessId.getPrincipalId(), label.Public()) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, c4T, label.Join(label.Readers(set[p.Id]{ bSessId.getPrincipalId() }), label.Readers(set[p.Id]{ aSessId }))) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, c4T, label.Readers(set[p.Id]{ aSessId, bSessId.getPrincipalId() }))) :
+    (GetWgLabeling().IsPublishable(snapshot, c4T))
+ensures  GetWgUsage().GetKdfUsageString(c4T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC4
+func CreateC4(snapshot tr.TraceEntry, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (c4T tm.Term) {
+    usageCtx := GetWgUsage()
+    bothL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() })
+    bJoinAL := label.Join(label.Readers(set[p.Id]{ bSessId.getPrincipalId() }), label.Readers(set[p.Id]{ aSessId }))
+    epkrT := CreateEpkr(snapshot, ekrT, bSessId)
+    c4T = Term_c4(c3T, ekrT)
+    assert usageCtx.GetKdfUsageString(c3T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC3
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(1, snapshot, c3T, epkrT, bJoinAL, label.Public(), u.KdfKey(WgC3), some(u.KdfKey(WgC4)))
+        GetWgLabeling().SimplifyJoinToReaders(snapshot, c4T, aSessId, bSessId.getPrincipalId())
+    } else {
+        ApplyKdfBounded(1, snapshot, c3T, epkrT, bothL, label.Public(), label.Public(), label.Public(), u.KdfKey(WgC3), some(u.KdfKey(WgC4)))
+    }
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c4T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+}
+
+ghost
+requires GetWgLabeling().IsLabeled(snapshot, h4T, label.Public())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  h5T == Term_h5(h4T, ekrT)
+ensures  GetWgLabeling().IsLabeled(snapshot, h5T, label.Public())
+func CreateH5(snapshot tr.TraceEntry, h4T, ekrT tm.Term, aSessId, bSessId p.Id) (h5T tm.Term) {
+    epkrT := CreateEpkr(snapshot, ekrT, bSessId)
+    h5T = Term_h5(h4T, ekrT)
+    GetWgLabeling().ApplyHash2Tuple(snapshot, h4T, epkrT, label.Public(), label.Public())
+}
+
+ghost
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  c5T == Term_c5(epkIX, c3T, ekrT)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, c5T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() }), u.KdfKey(WgC5))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(c5T) == Label_c5(aSessId, bSessId) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, c5T, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, c5T, label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId })))) :
+    (GetWgLabeling().IsMsg(snapshot, c5T, label.Readers(set[p.Id]{ bSessId })))
+ensures  GetWgUsage().GetKdfUsageString(c5T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC5
+func CreateC5(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (c5T tm.Term) {
+    usageCtx := GetWgUsage()
+    justBL := label.Readers(set[p.Id]{ bSessId })
+    bothL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() })
+    bJoinAL := label.Join(label.Readers(set[p.Id]{ bSessId.getPrincipalId() }), label.Readers(set[p.Id]{ aSessId }))
+    bSessJoinAL := label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId }))
+    c4T := CreateC4(snapshot, epkIX, c3T, ekrT, aSessId, bSessId)
+    c5T = Term_c5(epkIX, c3T, ekrT)
+    rhsL := GetWgLabeling().GetLabel(tm.exp(epkIX, ekrT))
+    GetWgLabeling().CanFlowReflexive(snapshot, rhsL)
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(1, snapshot, c4T, tm.exp(epkIX, ekrT), bJoinAL, bSessJoinAL, u.KdfKey(WgC4), some(u.KdfKey(WgC5)))
+        GetWgLabeling().PrincipalsJoinFlowsToBSessions(snapshot, aSessId, bSessId)
+    } else {
+        GetWgLabeling().CanFlowReflexive(snapshot, justBL)
+        if exists ekI tm.Term :: epkIX == tm.exp(tm.generator(), ekI) {
+            assert GetWgLabeling().GetLabel(tm.exp(epkIX, ekrT)).IsJoin()
+            // get witness
+            ekI := arb.GetArbTerm()
+            assume epkIX == tm.exp(tm.generator(), ekI)
+            assert GetWgLabeling().GetLabel(tm.exp(epkIX, ekrT)) == label.Join(GetWgLabeling().GetLabel(ekI), justBL)
+            assert GetWgLabeling().CanFlow(snapshot, rhsL, justBL)
+        } else if epkIX.IsGenerator() {
+            assert GetWgLabeling().GetLabel(tm.exp(epkIX, ekrT)) == label.Public()
+        } else {
+            assert GetWgLabeling().GetLabel(tm.exp(epkIX, ekrT)) == label.Meet(GetWgLabeling().GetLabel(epkIX), justBL)
+            GetWgLabeling().FlowsToPublicCanFlow(snapshot, GetWgLabeling().GetLabel(epkIX), justBL)
+            assert GetWgLabeling().CanFlow(snapshot, rhsL, justBL)
+        }
+        ApplyKdfBounded(1, snapshot, c4T, tm.exp(epkIX, ekrT), bothL, label.Public(), label.Public(), justBL, u.KdfKey(WgC4), some(u.KdfKey(WgC5)))
+    }
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c5T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  c6T == Term_c6(ltpkT, epkIX, c3T, ekrT)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, c6T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId }), u.KdfKey(WgC6))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(c6T) == Label_c6(aSessId, bSessId) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, c6T, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, c6T, label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId })))) :
+    (GetWgLabeling().IsMsg(snapshot, c6T, label.Readers(set[p.Id]{ bSessId })))
+ensures  GetWgUsage().GetKdfUsageString(c6T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC6
+func CreateC6(snapshot tr.TraceEntry, ltkT, ltpkT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (c6T tm.Term) {
+    usageCtx := GetWgUsage()
+    justBL := label.Readers(set[p.Id]{ bSessId })
+    bothL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() })
+    aBSessL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId })
+    aSessBSessL := label.Readers(set[p.Id]{ aSessId, bSessId })
+    bJoinAL := label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId.getPrincipalId() }))
+    aSessJoinBL := label.Join(label.Readers(set[p.Id]{ aSessId }), label.Readers(set[p.Id]{ bSessId }))
+    c5T := CreateC5(snapshot, ltkT, ltpkT, epkIX, c3T, ekrT, aSessId, bSessId)
+    c6T = Term_c6(ltpkT, epkIX, c3T, ekrT)
+    GetWgLabeling().CanFlowReflexive(snapshot, bJoinAL)
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(1, snapshot, c5T, tm.exp(ltpkT, ekrT), aSessJoinBL, bJoinAL, u.KdfKey(WgC5), some(u.KdfKey(WgC6)))
+        GetWgLabeling().PrincipalsJoinFlowsToSessions(snapshot, aSessId, bSessId)
+        GetWgLabeling().SimplifyJoinToReaders(snapshot, c6T, aSessId, bSessId)
+        GetWgLabeling().PrincipalsFlowsToSession(snapshot, aSessId, bSessId)
+        GetWgLabeling().CanFlowTransitive(snapshot, aBSessL, aSessBSessL, GetWgLabeling().GetLabel(c6T))
+    } else {
+        ApplyKdfBounded(1, snapshot, c5T, tm.exp(ltpkT, ekrT), bothL, justBL, bJoinAL, bJoinAL, u.KdfKey(WgC5), some(u.KdfKey(WgC6)))
+        GetWgLabeling().CanFlowReflexive(snapshot, justBL)
+        assert GetWgLabeling().CanFlow(snapshot, bJoinAL, justBL)
+        resL := GetWgLabeling().GetLabel(c6T)
+        GetWgLabeling().CanFlowTransitive(snapshot, resL, label.Meet(justBL, bJoinAL), justBL)
+        GetWgLabeling().SimplifyJoinToReaders(snapshot, c6T, aSessId.getPrincipalId(), bSessId)
+    }
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c6T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  c7T == Term_c7(ltpkT, pskT, epkIX, c3T, ekrT)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, c7T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId }), u.KdfKey(WgChaininigKey))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(c7T) == Label_c7(aSessId, bSessId) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, c7T, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, c7T, label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId })))) :
+    (GetWgLabeling().IsMsg(snapshot, c7T, label.Readers(set[p.Id]{ bSessId })))
+ensures  GetWgUsage().GetKdfUsageString(c7T, MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgChaininigKey
+func CreateC7(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (c7T tm.Term) {
+    usageCtx := GetWgUsage()
+    bSessL := label.Readers(set[p.Id]{ bSessId })
+    aBSessL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId })
+    bSessJoinASessL := label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId }))
+    c6T := CreateC6(snapshot, ltkT, ltpkT, epkIX, c3T, ekrT, aSessId, bSessId)
+    c7T = Term_c7(ltpkT, pskT, epkIX, c3T, ekrT)
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(1, snapshot, c6T, pskT, bSessJoinASessL, label.Public(), u.KdfKey(WgC6), some(u.KdfKey(WgChaininigKey)))
+    } else {
+        ApplyKdfBounded(1, snapshot, c6T, pskT, aBSessL, bSessL, label.Public(), label.Public(), u.KdfKey(WgC6), some(u.KdfKey(WgChaininigKey)))
+    }
+    usageCtx.GetUsageInternalIndependentOf2ndParam(c7T, MIN_GET_USAGE_INTERNAL_MEASURE, MIN_GET_USAGE_INTERNAL_MEASURE + 1)
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  piT == Term_pi(ltpkT, pskT, epkIX, c3T, ekrT)
+ensures  GetWgLabeling().IsLabeledRelaxed(snapshot, piT, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId }))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().IsLabeledRelaxed(snapshot, piT, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, piT, label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId })))) :
+    (GetWgLabeling().IsMsg(snapshot, piT, label.Readers(set[p.Id]{ bSessId })))
+func CreatePi(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (piT tm.Term) {
+    bSessL := label.Readers(set[p.Id]{ bSessId })
+    aBSessL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId })
+    bSessJoinASessL := label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId }))
+    c6T := CreateC6(snapshot, ltkT, ltpkT, epkIX, c3T, ekrT, aSessId, bSessId)
+    piT = Term_pi(ltpkT, pskT, epkIX, c3T, ekrT)
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(2, snapshot, c6T, pskT, bSessJoinASessL, label.Public(), u.KdfKey(WgC6), none[u.Usage])
+    } else {
+        ApplyKdfBounded(2, snapshot, c6T, pskT, aBSessL, bSessL, label.Public(), label.Public(), u.KdfKey(WgC6), none[u.Usage])
+    }
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  k3T == Term_k3(ltpkT, pskT, epkIX, c3T, ekrT)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, k3T, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId }), u.AeadKey(WgK3))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(k3T) == Label_k3(aSessId, bSessId) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, k3T, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, k3T, label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId })))) :
+    (GetWgLabeling().IsMsg(snapshot, k3T, label.Readers(set[p.Id]{ bSessId })))
+func CreateK3(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (k3T tm.Term) {
+    bSessL := label.Readers(set[p.Id]{ bSessId })
+    aBSessL := label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId })
+    bSessJoinASessL := label.Join(label.Readers(set[p.Id]{ bSessId }), label.Readers(set[p.Id]{ aSessId }))
+    c6T := CreateC6(snapshot, ltkT, ltpkT, epkIX, c3T, ekrT, aSessId, bSessId)
+    k3T = Term_k3(ltpkT, pskT, epkIX, c3T, ekrT)
+    if GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) {
+        ApplyKdfPrecise(3, snapshot, c6T, pskT, bSessJoinASessL, label.Public(), u.KdfKey(WgC6), some(u.AeadKey(WgK3)))
+    } else {
+        ApplyKdfBounded(3, snapshot, c6T, pskT, aBSessL, bSessL, label.Public(), label.Public(), u.KdfKey(WgC6), some(u.AeadKey(WgK3)))
+    }
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsLabeled(snapshot, h4T, label.Public())
+requires GetWgUsage().hasH4Structure(h4T)
+requires GetWgUsage().getPkIFromH4(h4T) == ltpkT
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  h6T == Term_h6(ltpkT, pskT, epkIX, c3T, h4T, ekrT)
+ensures  GetWgLabeling().IsLabeled(snapshot, h6T, label.Public())
+ensures  GetWgUsage().hasH6Structure(h6T)
+ensures  GetWgUsage().getPkIFromH6(h6T) == ltpkT
+func CreateH6(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, h4T, ekrT tm.Term, aSessId, bSessId p.Id) (h6T tm.Term) {
+    h5T := CreateH5(snapshot, h4T, ekrT, aSessId, bSessId)
+    h6T = Term_h6(ltpkT, pskT, epkIX, c3T, h4T, ekrT)
+    piT := CreatePi(snapshot, ltkT, ltpkT, pskT, epkIX, c3T, ekrT, aSessId, bSessId)
+    GetWgLabeling().ApplyHash2Tuple(snapshot, h5T, piT, label.Public(), label.Public())
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId.getPrincipalId(), ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public()) 
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires h4Props(snapshot, h4T, ltkT, ltpkT, epkIX)
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+requires sidREventProps(snapshot, epkIX, ekrT, Term_k_IR(ltpkT, pskT, epkIX, c3T, ekrT), Term_k_RI(ltpkT, pskT, epkIX, c3T, ekrT), aSessId, bSessId)
+ensures  cemptyT == Term_c_empty(ltpkT, pskT, epkIX, c3T, h4T, ekrT)
+ensures  GetWgUsage().AeadPred(snapshot, WgK3, Term_k3(ltpkT, pskT, epkIX, c3T, ekrT), tm.zeroString(12), tm.zeroString(0), Term_h6(ltpkT, pskT, epkIX, c3T, h4T, ekrT))
+ensures  GetWgLabeling().IsPublishable(snapshot, cemptyT)
+func CreateCEmpty(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, h4T, ekrT tm.Term, aSessId, bSessId p.Id) (cemptyT tm.Term) {
+    k3T := CreateK3(snapshot, ltkT, ltpkT, pskT, epkIX, c3T, ekrT, aSessId, bSessId)
+    h6T := CreateH6(snapshot, ltkT, ltpkT, pskT, epkIX, c3T, h4T, ekrT, aSessId, bSessId)
+    cemptyT = Term_c_empty(ltpkT, pskT, epkIX, c3T, h4T, ekrT)
+    pkrT := CreatePkr(snapshot, ltkT, bSessId.getPrincipalId())
+    epkrT := CreateEpkr(snapshot, ekrT, bSessId)
+    assert GetWgLabeling().IsPublishable(snapshot, tm.zeroString(12))
+    assert GetWgLabeling().IsPublishable(snapshot, tm.zeroString(0))
+    establishCemptyPred(snapshot, epkIX, k3T, h6T, ltkT, ltpkT, ekrT, aSessId, bSessId)
+    assert GetWgLabeling().IsValidAead(snapshot, k3T, tm.zeroString(12), tm.zeroString(0), label.Public(), h6T)
+}
+
+ghost
+requires GetWgUsage().hasH6Structure(h6T)
+requires GetWgUsage().hasK3Structure(k3T)
+requires GetWgUsage().getPkIFromH6(h6T) == ltpkT
+requires GetWgUsage().getPkRFromH6(h6T) == tm.exp(tm.generator(), ltkT)
+requires GetWgUsage().getEpkIFromH6(h6T) == epkIX
+requires GetWgUsage().getEpkRFromH6(h6T) == tm.exp(tm.generator(), ekrT)
+requires sidREventProps(snapshot, epkIX, ekrT, GetWgUsage().getKirFromK3(k3T), GetWgUsage().getKriFromK3(k3T), aSessId, bSessId)
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId.getPrincipalId(), ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, KeyTypeDh(), WgKey)
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  GetWgUsage().cemptyPred(snapshot, k3T, h6T)
+func establishCemptyPred(snapshot tr.TraceEntry, epkIX, k3T, h6T, ltkT, ltpkT, ekrT tm.Term, aSessId, bSessId p.Id) {
+    // no body needed
+}
+
+ghost
+pure func sidREventProps(snapshot tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) bool {
+    return aSessId.getSession() != none[uint32] &&
+        bSessId.IsSession() &&
+        snapshot.eventOccurs(bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId.getPrincipalId(), ltkT, KeyTypeDh(), WgKey)
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires h4Props(snapshot, h4T, ltkT, ltpkT, epkIX)
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+requires GetWgLabeling().IsPublishable(snapshot, sidI)
+requires GetWgLabeling().IsPublishable(snapshot, mac1)
+requires GetWgLabeling().IsPublishable(snapshot, mac2)
+requires sidREventProps(snapshot, epkIX, ekrT, Term_k_IR(ltpkT, pskT, epkIX, c3T, ekrT), Term_k_RI(ltpkT, pskT, epkIX, c3T, ekrT), aSessId, bSessId)
+ensures  m2T == Term_M2(sidI, getSid(bSessId), ltpkT, pskT, epkIX, c3T, h4T, ekrT, mac1, mac2)
+ensures  GetWgLabeling().IsPublishable(snapshot, m2T)
+// note that `sidI` is the term that was received in plaintext in the request and should just be
+// copied over to the response. This is independent of `aSessId.getSession()`
+func CreateM2(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, h4T, ekrT, sidI, mac1, mac2 tm.Term, aSessId, bSessId p.Id) (m2T tm.Term) {
+    epkrT := CreateEpkr(snapshot, ekrT, bSessId)
+    cemptyT := CreateCEmpty(snapshot, ltkT, ltpkT, pskT, epkIX, c3T, h4T, ekrT, aSessId, bSessId)
+    m2T = Term_M2(sidI, getSid(bSessId), ltpkT, pskT, epkIX, c3T, h4T, ekrT, mac1, mac2)
+    GetWgLabeling().IsMsgTupleCreate(snapshot, m2T, label.Public())
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  kirT == Term_k_IR(ltpkT, pskT, epkIX, c3T, ekrT)
+ensures  GetWgUsage().hasKirStructure(kirT)
+ensures  GetWgUsage().getEpkIFromKir(kirT) == GetWgUsage().getEpkIFromC3(c3T)
+ensures  GetWgUsage().getEpkRFromKir(kirT) == tm.exp(tm.generator(), ekrT)
+ensures  GetWgUsage().getDhStaticFromKir(kirT) == GetWgUsage().getDhStaticFromC3(c3T)
+ensures  GetWgLabeling().IsLabeled(snapshot, tm.exp(ltpkT, ekrT), Label_DhStaticEphemeral(aSessId.getPrincipalId(), bSessId))
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, kirT, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId }), u.AeadKey(WgKir))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(kirT) == Label_k_IR(aSessId, bSessId) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, kirT, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, kirT, Label_k_IRPrecise(aSessId, bSessId))) :
+    (GetWgLabeling().IsMsg(snapshot, kirT, label.Readers(set[p.Id]{ bSessId })))
+func CreateKir(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (kirT tm.Term) {
+    c7T := CreateC7(snapshot, ltkT, ltpkT, pskT, epkIX, c3T, ekrT, aSessId, bSessId)
+    kirT = Term_k_IR(ltpkT, pskT, epkIX, c3T, ekrT)
+}
+
+ghost
+requires GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId.getPrincipalId(), ltpkT, WgKey)
+requires GetWgLabeling().IsLabeled(snapshot, pskT, label.Public())
+requires epkIXProps(snapshot, ltkT, ltpkT, epkIX, aSessId)
+requires c3Props(snapshot, epkIX, c3T, aSessId, bSessId.getPrincipalId())
+requires GetWgLabeling().IsSecretKey(snapshot, bSessId, ekrT, KeyTypeDh(), WgEphemeralSk)
+ensures  kriT == Term_k_RI(ltpkT, pskT, epkIX, c3T, ekrT)
+ensures  GetWgLabeling().IsSecretRelaxed(snapshot, kriT, label.Readers(set[p.Id]{ aSessId.getPrincipalId(), bSessId }), u.AeadKey(WgKri))
+ensures  GetWgLabeling().IsPublicDhKeyExistential(snapshot, aSessId, epkIX, WgEphemeralSk) ?
+    (GetWgLabeling().GetLabel(kriT) == Label_k_RI(aSessId, bSessId) &&
+    GetWgLabeling().IsLabeledRelaxed(snapshot, kriT, label.Readers(set[p.Id]{ aSessId, bSessId })) &&
+    GetWgLabeling().IsLabeledPrecise(snapshot, kriT, Label_k_RIPrecise(aSessId, bSessId))) :
+    (GetWgLabeling().IsMsg(snapshot, kriT, label.Readers(set[p.Id]{ bSessId })))
+func CreateKri(snapshot tr.TraceEntry, ltkT, ltpkT, pskT, epkIX, c3T, ekrT tm.Term, aSessId, bSessId p.Id) (kriT tm.Term) {
+    c7T := CreateC7(snapshot, ltkT, ltpkT, pskT, epkIX, c3T, ekrT, aSessId, bSessId)
+    kriT = Term_k_RI(ltpkT, pskT, epkIX, c3T, ekrT)
+}

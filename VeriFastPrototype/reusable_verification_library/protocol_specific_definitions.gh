@@ -1,0 +1,12 @@
+#ifndef PROTOCOL_SPECIFIC_DEFINITIONS
+#define PROTOCOL_SPECIFIC_DEFINITIONS
+
+// these are the protocol-independent macro definitions that are used when verifying the library.
+// i.e. we make no assumptions about the actual fixpoint definitions by treating them as abstract
+
+#define UNIQUE ;
+#define CONSISTENCY ;
+#define UNIQUE_WITNESS ;
+#define EVENT_PRED ;
+
+#endif

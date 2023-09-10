@@ -1,0 +1,283 @@
+#ifndef TRACE_ENTRY_HELPERS
+#define TRACE_ENTRY_HELPERS
+
+#include "listex.gh"
+#include "term.gh"
+#include "trace_entry.gh"
+
+
+// returns a prefix of `t` by removing the most recent
+// trace entry, except if `t` only consists of the root
+// entry.
+fixpoint Trace getPrev(Trace t) {
+    switch (t) {
+        case root(root_terms): return t;
+        case makeEvent(t0, p, e): return t0;
+        case makeCorrupt(t0, id): return t0;
+        case makeMessage(t0, to, from, term): return t0;
+        case makeDropMessage(t0, to, from, term): return t0;
+        case makeNonce(t0, term): return t0;
+        case makePublic(t0, term): return t0;
+    }
+}
+
+fixpoint int traceLength<t>(trace<EventParams> t) {
+    switch (t) {
+        case root(root_terms): return 1;
+        case makeEvent(t0, p, e): return 1 + traceLength(t0);
+        case makeCorrupt(t0, id): return 1 + traceLength(t0);
+        case makeMessage(t0, to, from, term): return 1 + traceLength(t0);
+        case makeDropMessage(t0, to, from, term): return 1 + traceLength(t0);
+        case makeNonce(t0, term): return 1 + traceLength(t0);
+        case makePublic(t0, term): return 1 + traceLength(t0);
+    }
+}
+
+// takes 2 traces and returns true, if tr is the suffix of tr2
+fixpoint bool isSuffix<t>(trace<EventParams> tr2, trace<EventParams> tr ){
+    switch (tr) {
+        case root(root_terms): return tr == tr2 ? true : false; 
+        case makeEvent(t0, pr, e): return tr == tr2 ? true : isSuffix(tr2, t0);
+        case makeCorrupt(t0, id): return tr == tr2 ? true : isSuffix(tr2, t0);
+        case makeMessage(t0, to, from, term): return tr == tr2 ? true : isSuffix(tr2, t0);
+        case makeDropMessage(t0, to, from, term): return tr == tr2 ? true : isSuffix(tr2, t0);
+        case makeNonce(t0, term): return tr == tr2 ? true : isSuffix(tr2, t0);
+        case makePublic(t0, term): return tr == tr2 ? true : isSuffix(tr2, t0);   
+    }
+}
+
+lemma void isSuffixReflexive<t>(trace<EventParams> t1);
+    requires true;
+    ensures  isSuffix(t1, t1) == true;
+
+lemma void isSuffixTransitive<t>(trace<EventParams> t1, trace<EventParams> t2, trace<EventParams> t3);
+    requires isSuffix(t1, t2) && isSuffix(t2, t3);
+    ensures  isSuffix(t1, t3) == true;
+
+lemma void rootIsSuffix<t>(trace<EventParams> tr, trace<EventParams> r);
+    requires r == root(getPublicTerms(tr));
+    ensures  isSuffix(r, tr) == true;
+
+lemma void snapshot_suffix_hold_adding_message<t>(trace<EventParams> t1, trace<EventParams> bigger);
+    requires bigger == makeMessage(t1, _,_,_);
+    ensures  isSuffix(t1, bigger) == true;
+
+fixpoint bool eventOccurs(trace<EventParams> tr, int principal, ParameterizedEvent e) {
+   switch(tr) {
+        case root(root_terms): return false;
+        case makeEvent(t0, p, eCurr): return (principal == p && e == eCurr) ? true : eventOccurs(t0, principal, e);
+        case makeCorrupt(t0, id): return eventOccurs(t0, principal, e);
+        case makeMessage(t0, to, from, term): return eventOccurs(t0, principal, e);
+        case makeDropMessage(t0, to, from, term): return eventOccurs(t0, principal, e);
+        case makeNonce(t0, term): return eventOccurs(t0, principal, e);
+        case makePublic(t0, term): return eventOccurs(t0, principal, e);
+   }
+}
+
+lemma void eventOccursMonotonic(trace<EventParams> t1, trace<EventParams> t2, int principal, ParameterizedEvent e);
+    requires isSuffix(t1, t2) == true &*& eventOccurs(t1, principal, e) == true;
+    ensures eventOccurs(t2, principal, e) == true;
+
+fixpoint bool eventOccursAt(Trace tr, int principal, ParameterizedEvent e, int idx) {
+    switch (tr) {
+        case root(root_terms): return false;
+        case makeEvent(t0, p, eCurr): return (principal == p && e == eCurr && idx == traceLength(tr) - 1) ? true : eventOccursAt(t0, principal, e, idx);
+        case makeCorrupt(t0, id): return eventOccursAt(t0, principal, e, idx);
+        case makeMessage(t0, to, from, term): return eventOccursAt(t0, principal, e, idx);
+        case makeDropMessage(t0, to, from, term): return eventOccursAt(t0, principal, e, idx);
+        case makeNonce(t0, term): return eventOccursAt(t0, principal, e, idx);
+        case makePublic(t0, term): return eventOccursAt(t0, principal, e, idx);
+    }
+}
+
+lemma void eventOccursAtMonotonic(Trace t1, Trace t2, int principal, ParameterizedEvent e, int idx);
+    requires isSuffix(t1, t2) == true &*& eventOccursAt(t1, principal, e, idx) == true;
+    ensures  eventOccursAt(t2, principal, e, idx) == true;
+
+fixpoint int eventOccursAtTime(Trace tr, int principal, ParameterizedEvent e) {
+    switch (tr) {
+        case root(root_terms): return traceLength(tr);
+        case makeEvent(t0, p, eCurr): return (principal == p && e == eCurr) ? traceLength(tr) : eventOccursAtTime(t0, principal, e);
+        case makeCorrupt(t0, id): return eventOccursAtTime(t0, principal, e);
+        case makeMessage(t0, to, from, term): return eventOccursAtTime(t0, principal, e);
+        case makeDropMessage(t0, to, from, term): return eventOccursAtTime(t0, principal, e);
+        case makeNonce(t0, term): return eventOccursAtTime(t0, principal, e);
+        case makePublic(t0, term): return eventOccursAtTime(t0, principal, e);
+    }
+}
+
+lemma void eventOccursAtLemma(Trace t, int principal, ParameterizedEvent ev, int idx);
+    requires eventOccursAt(t, principal, ev, idx) == true;
+    ensures  eventOccurs(t, principal, ev) == true;
+
+lemma int eventOccursAtTimeLemma(Trace t, int principal, ParameterizedEvent ev);
+    requires eventOccurs(t, principal, ev) == true;
+    ensures  eventOccursAt(t, principal, ev, result) && result == eventOccursAtTime(t, principal, ev) - 1;
+
+// Returns true if a msgOccurs on the trace
+fixpoint bool msgOccurs(Term t, int to, int from,trace<EventParams> tr) {
+    switch (tr) {
+        case root(root_terms): return false;
+        case makeEvent(t0, pr, e): return msgOccurs(t, to, from, t0);
+        case makeCorrupt(t0, id): return msgOccurs(t, to, from, t0);
+        case makeMessage(t0, to1, from1, term): return t == term && to1 == to && from1 == from ? true : msgOccurs(t, to, from, t0);
+        case makeDropMessage(t0, to1, from1, term) : return msgOccurs(t, to, from, t0);
+        case makeNonce(t0, term): return msgOccurs(t, to, from, t0);
+        case makePublic(t0, term): return msgOccurs(t, to, from, t0);
+    }
+}
+
+fixpoint bool onlyNonceOccurs(trace<EventParams> tr, Term t) {
+    switch (tr) {
+        case root(root_terms): return false; 
+        case makeEvent(t0, pr, e): return onlyNonceOccurs(t0, t);
+        case makeCorrupt(t0, id): return onlyNonceOccurs(t0, t);
+        case makeMessage(t0, to, from, term): return onlyNonceOccurs(t0, t);
+        case makeDropMessage(t0, to, from, term): return onlyNonceOccurs(t0, t);
+        case makeNonce(t0, term): return t == term ? true : onlyNonceOccurs(t0, t);
+        case makePublic(t0, term): return onlyNonceOccurs(t0, t);
+    }
+}
+
+lemma void onlyNonceOccursMonotonic(trace<EventParams> t1, trace<EventParams> t2, Term t);
+    requires isSuffix(t1, t2) == true && onlyNonceOccurs(t1, t) == true;
+    ensures  onlyNonceOccurs(t2, t) == true;
+
+// returns true if a given nonce is at index i of the trace
+fixpoint bool nonceAt(trace<EventParams> tr, Term t, Label l, int i){
+    switch (tr) {
+        case root(root_terms) : return false; 
+        case makeEvent(t0, pr, e): return nonceAt(t0, t, l,  i);
+        case makeCorrupt(t0, id) :  return nonceAt(t0, t, l,  i);
+        case makeMessage(t0,to,from,term): return nonceAt(t0, t, l,  i);
+        case makeDropMessage(t0, to, from, term) :  return nonceAt(t0, t, l,  i);
+        case makeNonce(t0, term): return t == term ? traceLength(tr) == i ? true : nonceAt(t0, t, l, i) : nonceAt(t0, t, l, i) ;
+        case makePublic(t0, term) :  return nonceAt(t0, t, l, i);
+    }
+}
+
+fixpoint bool nonceOccurs(trace<EventParams> tr, Term t, Label l) {
+    return onlyNonceOccurs(tr, t) && getNonceLabel(t) == l;
+}
+
+lemma void nonceOccursMonotonic(trace<EventParams> t1, trace<EventParams> t2, Term t, Label l);
+    requires isSuffix(t1, t2) == true && nonceOccurs(t1, t, l) == true;
+    ensures  nonceOccurs(t2, t, l) == true;
+
+// gets the public terms that were given at initialization
+fixpoint list<Term> getPublicTerms<t>(trace<EventParams> tr) {
+    switch (tr) {
+        case root(root_terms): return root_terms; 
+        case makeEvent(t0, pr, e): return  getPublicTerms(t0);
+        case makeCorrupt(t0, id): return getPublicTerms(t0);
+        case makeMessage(t0, to, from, term): return getPublicTerms(t0);
+        case makeDropMessage(t0, to, from, term): return getPublicTerms(t0);
+        case makeNonce(t0, term): return getPublicTerms(t0);
+        case makePublic(t0, term): return getPublicTerms(t0);
+    }
+}
+
+fixpoint list<Term> getTermsMadePublic(trace<EventParams>tr) {
+    switch (tr) {
+        case root(root_terms): return nil; 
+        case makeEvent(t0, pr, e): return getTermsMadePublic(t0);
+        case makeCorrupt(t0, id): return getTermsMadePublic(t0);
+        case makeMessage(t0,to,from,term): return getTermsMadePublic(t0);
+        case makeDropMessage(t0, to, from, term): return getTermsMadePublic(t0);
+        case makeNonce(t0, term): return getTermsMadePublic(t0);
+        case makePublic(t0, term): return cons(term, getTermsMadePublic(t0));
+    }
+}
+
+fixpoint bool containsCorruptId<t>(list<t> corruptIds, list<t> ids){
+    return (intersection (corruptIds, ids)) != nil;
+}
+
+lemma void containsCorruptIdMonotonic2<t>(list<t> corruptIds1, list<t> corruptIds2, list<t> ids);
+    requires containsCorruptId(corruptIds1, ids) && subset(corruptIds1, corruptIds2);
+    ensures  containsCorruptId(corruptIds2, ids) == true;
+
+fixpoint bool containsIds<t>(list<t> haystack, list<t> ids){
+    return subset(ids, haystack);
+}
+
+// get corrupted ids
+fixpoint list<int> getCorruptIds<t>(trace<EventParams> t){
+     switch (t) {
+        case root(root_terms): return nil;
+        case makeEvent(t0, p, e): return getCorruptIds(t0);
+        case makeCorrupt(t0, id): return cons(id, getCorruptIds(t0));
+        case makeMessage(t0, to, from, term): return getCorruptIds(t0);
+        case makeDropMessage(t0, to, from, term): return getCorruptIds(t0);
+        case makeNonce(t0, term): return getCorruptIds(t0);
+        case makePublic(t0, term): return getCorruptIds(t0);
+    }
+}
+
+lemma void getCorruptIdsMonotonic(trace<EventParams> t1, trace<EventParams> t2);
+    requires isSuffix(t1, t2) == true;
+    ensures  subset(getCorruptIds(t1), getCorruptIds(t2)) == true;
+
+// get all the message Terms in a list
+fixpoint list<Term> getMessagePayloads<t>(trace<EventParams> tr)
+{
+    switch (tr) {
+        case root(root_terms): return nil; 
+        case makeEvent(t0, pr, e): return  getMessagePayloads(t0);
+        case makeCorrupt(t0, id): return getMessagePayloads(t0);
+        case makeMessage(t0, to, from, term): return cons(term, getMessagePayloads(t0));
+        case makeDropMessage(t0, to, from, term): return getMessagePayloads(t0);
+        case makeNonce(t0, term): return getMessagePayloads(t0);
+        case makePublic(t0, term): return getMessagePayloads(t0);
+    }
+}
+
+// returns true if a message with a given sender occurs
+fixpoint bool senderOccurs<t>(trace<EventParams> tr,  int from) {
+    switch (tr) {
+        case root(root_terms): return false;
+        case makeEvent(t0, pr, e): return senderOccurs(t0, from);
+        case makeCorrupt(t0, id): return senderOccurs(t0, from);
+        case makeMessage(t0, to1, from1, term): return from1 == from ? true : senderOccurs(t0, from);
+        case makeDropMessage(t0, to1, from1, term): return senderOccurs(t0, from);
+        case makeNonce(t0, term): return senderOccurs(t0, from);
+        case makePublic(t0, term): return senderOccurs(t0, from);
+    }
+}
+
+// returns true if a message with a given receiver occurs
+fixpoint bool receiverOccurs<t>(trace<EventParams> tr, int to) {
+    switch (tr) {
+        case root(root_terms): return false;
+        case makeEvent(t0, pr, e): return receiverOccurs(t0, to);
+        case makeCorrupt(t0, id): return receiverOccurs(t0, to);
+        case makeMessage(t0, to1, from1, term): return to1 == to ? true : receiverOccurs(t0, to);
+        case makeDropMessage(t0, to1, from1, term): return receiverOccurs(t0, to);
+        case makeNonce(t0, term): return receiverOccurs(t0, to);
+        case makePublic(t0, term): return receiverOccurs(t0, to);
+    }
+}
+
+fixpoint Trace getEventTrace(trace<EventParams> tr, int principal, ParameterizedEvent e)
+{
+   switch (tr) {
+        case root(root_terms): return tr;
+        case makeEvent(t0, p, eCurr): return (principal == p && e == eCurr) ? t0 : getEventTrace(t0, principal, e);
+        case makeCorrupt(t0, id): return getEventTrace(t0, principal, e); 
+        case makeMessage(t0, to, from, term): return getEventTrace(t0, principal, e);
+        case makeDropMessage(t0, to, from, term): return getEventTrace(t0, principal, e);
+        case makeNonce(t0, term): return getEventTrace(t0, principal, e);
+        case makePublic(t0, term): return getEventTrace(t0, principal, e);
+   }
+}
+
+
+lemma void msgOccursMonotonic<t>(Term t, int to, int from, trace<EventParams> tr, trace<EventParams> global_trace);
+    requires isSuffix(tr, global_trace) && msgOccurs(t, to, from, tr);
+    ensures  msgOccurs(t, to, from, global_trace) == true;
+
+lemma void getPublicTermsMonotonic<t>(trace<EventParams> t1, trace<EventParams> t2);
+    requires isSuffix(t1, t2) == true;
+    ensures  getPublicTerms(t1) == getPublicTerms(t2);
+
+#endif

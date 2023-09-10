@@ -1,0 +1,20 @@
+#ifndef PATTERN
+#define PATTERN
+
+#include "bytes.gh"
+#include "term.gh"
+
+
+lemma Term PatternPropertyMsg1(Term naT, Term idAT, Term skT, Term t);
+    requires gamma(t) == gamma(encrypt(publicKey(skT), tuple3(integer(1), naT, idAT)));
+    ensures  t == encrypt(publicKey(skT), tuple3(integer(1), result, idAT));
+
+lemma Term PatternPropertyMsg2(Term naT, Term nbT, Term idBT, Term skT, Term t);
+    requires gamma(t) == gamma(encrypt(publicKey(skT), tuple4(integer(2), naT, nbT, idBT)));
+    ensures  t == encrypt(publicKey(skT), tuple4(integer(2), naT, result, idBT));
+
+lemma Term PatternPropertyMsg3(Term nbT, Term skT, Term t);
+    requires gamma(t) == gamma(encrypt(publicKey(skT), tuple2(integer(3), nbT)));
+    ensures  t == encrypt(publicKey(skT), tuple2(integer(3), nbT));
+
+#endif

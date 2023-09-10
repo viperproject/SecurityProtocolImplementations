@@ -1,0 +1,16 @@
+#ifndef PROTOCOL_SPECIFIC_PKE_DEFINITION
+#define PROTOCOL_SPECIFIC_PKE_DEFINITION
+
+#include "term.gh"
+#include "trace_entry.gh"
+
+
+// type definition of pkePred fixpoint:
+#define PkePred fixpoint(Trace, Term, Term, bool)
+
+// protocol-specific instantiations of this library can
+// implement this predicate to bind `pkePred` to a particular
+// fixpoint definition.
+predicate PkeCtxt(PkePred pkePred);
+
+#endif

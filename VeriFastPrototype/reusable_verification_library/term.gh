@@ -1,0 +1,131 @@
+#ifndef TERM
+#define TERM
+
+#include "secrecy_label.gh"
+
+inductive Term = | integer(int value)                 
+                 | stringTerm(list<char> str)
+                 | encrypt(Term pk, Term t)
+                 | hash(Term t) 
+                 | nonce(list<char> bytes, Label l)
+                 | publicKey(Term t)
+                 | tuple2(Term t1, Term t2)
+                 | tuple3(Term t1, Term  t2, Term t3)
+                 | tuple4(Term t1, Term  t2, Term t3, Term t4);
+
+
+fixpoint int getTermType(Term t);
+
+// type 0
+fixpoint list<char> getNonceBytes(Term t);
+fixpoint Label getNonceLabel(Term t);
+
+// type 1
+fixpoint Term getFirst(Term t);
+fixpoint Term getSecond(Term t);
+
+// type 2
+fixpoint Term getThird(Term t);
+
+// type 3
+fixpoint Term getForth(Term t);
+
+// type 4
+fixpoint Term getInput(Term t);
+
+// type 5
+fixpoint Term getSecretKey(Term publicKey);
+
+// type 6
+fixpoint Term getPublicKey(Term t);
+fixpoint Term getPlaintext(Term t);
+
+// type 7
+fixpoint list<char> getString(Term t);
+
+// type 8
+fixpoint int getInteger(Term t);
+
+
+lemma_auto void termBelongsToKnownType(Term t);
+    requires true;
+    ensures  0 <= getTermType(t) && getTermType(t) <= 8;
+
+lemma_auto void nonceIsInjective(list<char> bytes, Label l);
+    requires true;
+    ensures  getTermType(nonce(bytes, l)) == 0 &&
+        getNonceBytes(nonce(bytes, l)) == bytes &&
+        getNonceLabel(nonce(bytes, l)) == l;
+
+lemma_auto void nonceImpliesItsConstruction(Term t);
+    requires true;
+    ensures  getTermType(t) != 0 || t == nonce(getNonceBytes(t), getNonceLabel(t));
+
+lemma_auto void tuple2IsInjective(Term t1, Term t2);
+    requires true;
+    ensures  getTermType(tuple2(t1, t2)) == 1 &&
+        getFirst(tuple2(t1, t2)) == t1 &&
+        getSecond(tuple2(t1, t2)) == t2;
+
+lemma_auto void tuple3IsInjective(Term t1, Term t2, Term t3);
+    requires true;
+    ensures  getTermType(tuple3(t1, t2, t3)) == 2 &&
+        getFirst(tuple3(t1, t2, t3)) == t1 &&
+        getSecond(tuple3(t1, t2, t3)) == t2 &&
+        getThird(tuple3(t1, t2, t3)) == t3;
+
+lemma_auto void tuple4IsInjective(Term t1, Term t2, Term t3, Term t4);
+    requires true;
+    ensures  getTermType(tuple4(t1, t2, t3, t4)) == 3 &&
+        getFirst(tuple4(t1, t2, t3, t4)) == t1 &&
+        getSecond(tuple4(t1, t2, t3, t4)) == t2 &&
+        getThird(tuple4(t1, t2, t3, t4)) == t3 &&
+        getForth(tuple4(t1, t2, t3, t4)) == t4;
+
+lemma_auto void tuple4ImpliesItsConstruction(Term t);
+    requires true;
+    ensures  getTermType(t) != 3 || t == tuple4(getFirst(t), getSecond(t), getThird(t), getForth(t));
+
+lemma_auto void hashIsInjective(Term t);
+    requires true;
+    ensures  getTermType(hash(t)) == 4 &&
+        getInput(hash(t)) == t;
+
+lemma_auto void publicKeyIsInjective(Term t);
+    requires true;
+    ensures  getTermType(publicKey(t)) == 5 &&
+        getSecretKey(publicKey(t)) == t;
+
+lemma_auto void publicKeyImpliesItsConstruction(Term t);
+    requires true;
+    ensures  getTermType(t) != 5 || t == publicKey(getSecretKey(t));
+
+lemma_auto void encryptIsInjective(Term pk, Term plaintext);
+    requires true;
+    ensures  getTermType(encrypt(pk, plaintext)) == 6 &&
+        getPublicKey(encrypt(pk, plaintext)) == pk &&
+        getPlaintext(encrypt(pk, plaintext)) == plaintext;
+
+lemma_auto void encryptImpliesItsConstruction(Term t);
+    requires true;
+    ensures  getTermType(t) != 6 || t == encrypt(getPublicKey(t), getPlaintext(t));
+
+lemma_auto void stringTermIsInjective(list<char> s);
+    requires true;
+    ensures  getTermType(stringTerm(s)) == 7 &&
+        getString(stringTerm(s)) == s;
+
+lemma_auto void integerIsInjective(int i);
+    requires true;
+    ensures  getTermType(integer(i)) == 8 &&
+        getInteger(integer(i)) == i;
+
+fixpoint bool isNonce(Term t) {
+    return getTermType(t) == 0;
+}
+
+fixpoint bool isPk(Term t) {
+    return getTermType(t) == 5;
+}
+
+#endif

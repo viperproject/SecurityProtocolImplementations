@@ -1,0 +1,378 @@
+package common
+
+import arb "github.com/viperproject/ReusableProtocolVerificationLibrary/arbitrary"
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+import tri "github.com/viperproject/ReusableProtocolVerificationLibrary/traceinvariant"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/usagecontext"
+
+
+const NslKey = "NSL Key"
+const NslNonce = "NSL Nonce"
+
+type NslContext struct {
+    usage UsageContext
+}
+// the following line is just a sanity check that NslContext is indeed a subtype 
+// of TraceContext (even though the implementation proof can be completely inferred):
+NslContext implements tri.TraceContext {}
+
+// TODO make ghost
+decreases
+ensures res.Props()
+pure func GetNslContext() (res NslContext) {
+    return NslContext{ NslUsageContext{ } }
+}
+
+ghost
+decreases
+pure func GetNslLabeling() LabelingContext {
+    return GetLabelingContext(NslUsageContext{ })
+}
+
+ghost
+decreases
+pure func (ctx NslContext) isInitiate(event ev.Event) bool {
+    return event.typ == Initiate
+}
+
+ghost
+decreases
+pure func (ctx NslContext) isRespond(event ev.Event) bool {
+    return event.typ == Respond
+}
+
+ghost
+decreases
+pure func (ctx NslContext) isFinishI(event ev.Event) bool {
+    return event.typ == FinishI
+}
+
+ghost
+decreases
+pure func (ctx NslContext) isFinishR(event ev.Event) bool {
+    return event.typ == FinishR
+}
+
+ghost
+decreases
+requires ctx.isInitiate(event)
+requires ctx.EventConsistency(event)
+pure func (ctx NslContext) getInitiateParams(event ev.Event) InitiateParams {
+    return (event.params).(InitiateParams)
+}
+
+ghost
+decreases
+requires ctx.isRespond(event)
+requires ctx.EventConsistency(event)
+pure func (ctx NslContext) getRespondParams(event ev.Event) RespondParams {
+    return (event.params).(RespondParams)
+}
+
+ghost
+decreases
+requires ctx.isFinishI(event)
+requires ctx.EventConsistency(event)
+pure func (ctx NslContext) getFinishIParams(event ev.Event) FinishIParams {
+    return (event.params).(FinishIParams)
+}
+
+ghost
+decreases
+requires ctx.isFinishR(event)
+requires ctx.EventConsistency(event)
+pure func (ctx NslContext) getFinishRParams(event ev.Event) FinishRParams {
+    return (event.params).(FinishRParams)
+}
+
+ghost
+decreases
+pure func (ctx NslContext) Props() bool {
+    return ctx.usage != nil && ctx.usage == NslUsageContext{ }
+}
+
+pred (ctx NslContext) eventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry) {
+    ctx.pureEventInv(principal, event, prev) &&
+    (ctx.isInitiate(event) ==> GetNslLabeling().NonceForEventIsUnique(ctx.getInitiateParams(event).na, event.typ)) &&
+    (ctx.isRespond(event) ==> GetNslLabeling().NonceForEventIsUnique(ctx.getRespondParams(event).nb, event.typ)) &&
+    (ctx.isFinishI(event) ==> GetNslLabeling().NonceForEventIsUnique(ctx.getFinishIParams(event).na, event.typ)) &&
+    (ctx.isFinishR(event) ==> GetNslLabeling().NonceForEventIsUnique(ctx.getFinishRParams(event).nb, event.typ))
+}
+
+ghost
+decreases
+pure func (ctx NslContext) EventConsistency(event ev.Event) bool {
+    return (ctx.isInitiate(event) ==> typeOf(event.params) == InitiateParams) &&
+        (ctx.isRespond(event) ==> typeOf(event.params) == RespondParams) &&
+        (ctx.isFinishI(event) ==> typeOf(event.params) == FinishIParams) &&
+        (ctx.isFinishR(event) ==> typeOf(event.params) == FinishRParams)
+}
+
+ghost
+decreases
+pure func (ctx NslContext) pureEventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry) bool {
+    return ctx.Props() &&
+        ctx.EventConsistency(event) &&
+        (ctx.isInitiate(event) ==> principal == ctx.getInitiateParams(event).a) &&
+        (ctx.isRespond(event) ==> principal == ctx.getRespondParams(event).b) &&
+        (ctx.isFinishI(event) ==> principal == ctx.getFinishIParams(event).a &&
+            // the following conjunct is necessary to make na a ghost parameter of the 3rd message as
+            // it allows to derive that `receivedIdA` is equal to `b.idA` as the labeling for a given
+            // nonce is unique.
+            GetNslLabeling().IsLabeled(prev, (ctx.getFinishIParams(event)).na, label.Readers(set[p.Id]{ p.principalId(principal), p.principalId((ctx.getFinishIParams(event)).b) })) &&
+            (GetNslLabeling().IsLabeled(prev, (ctx.getFinishIParams(event)).nb, label.Readers(set[p.Id]{ p.principalId(principal), p.principalId((ctx.getFinishIParams(event)).b) })) ||
+                GetNslLabeling().IsPublishable(prev, (ctx.getFinishIParams(event)).nb)) &&
+            ( // corruption has happened or Respond event occurs:
+                tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.principalId(principal), p.principalId((ctx.getFinishIParams(event)).b) }) ||
+                prev.eventOccurs((ctx.getFinishIParams(event)).b, ev.NewEvent(Respond, RespondParams{ principal, (ctx.getFinishIParams(event)).b, (ctx.getFinishIParams(event)).na, (ctx.getFinishIParams(event)).nb })))) &&
+        (ctx.isFinishR(event) ==> principal == (ctx.getFinishRParams(event)).b &&
+            prev.eventOccurs(principal, ev.NewEvent(Respond, RespondParams{ (ctx.getFinishRParams(event)).a, principal, (ctx.getFinishRParams(event)).na, (ctx.getFinishRParams(event)).nb })) &&
+            ( // corruption has happened or FinishI event occurs:
+                tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.principalId((ctx.getFinishRParams(event)).a), p.principalId(principal) }) ||
+                prev.eventOccurs((ctx.getFinishRParams(event)).a, ev.NewEvent(FinishI, FinishIParams{ (ctx.getFinishRParams(event)).a, principal, (ctx.getFinishRParams(event)).na, (ctx.getFinishRParams(event)).nb }))))
+}
+
+ghost
+decreases
+requires ctx.pureEventInv(principal, event, prev)
+ensures  ctx.EventConsistency(event)
+func (ctx NslContext) eventInvImpliesConsistency(principal p.Principal, event ev.Event, prev tr.TraceEntry) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx NslContext) IsUnique(typ ev.EventType) bool {
+    return typ == Initiate || typ == Respond || typ == FinishI || typ == FinishR
+}
+
+ghost
+decreases
+requires ctx.IsUnique(event.typ)
+requires ctx.EventConsistency(event)
+pure func (ctx NslContext) UniquenessWitness(event ev.Event) tm.Term {
+    return ctx.isInitiate(event) ?
+        ctx.getInitiateParams(event).na :
+        ctx.isRespond(event) ?
+            ctx.getRespondParams(event).nb :
+            ctx.isFinishI(event) ? 
+                ctx.getFinishIParams(event).na :
+                ctx.getFinishRParams(event).nb
+}
+
+ghost
+decreases
+requires ctx.Props()
+requires ctx.IsUnique(event.typ)
+requires ctx.eventInv(principal, event, prev)
+ensures  ctx.EventConsistency(event)
+ensures  nonce == ctx.UniquenessWitness(event)
+ensures  GetNslLabeling().NonceForEventIsUnique(nonce, event.typ)
+ensures  GetNslLabeling().NonceForEventIsUnique(nonce, event.typ) --* ctx.eventInv(principal, event, prev)
+func (ctx NslContext) isUniqueImpliesUniqueResource(principal p.Principal, event ev.Event, prev tr.TraceEntry) (nonce tm.Term) {
+    unfold ctx.eventInv(principal, event, prev)
+    nonce = ctx.UniquenessWitness(event)
+    package GetNslLabeling().NonceForEventIsUnique(nonce, event.typ) --* ctx.eventInv(principal, event, prev) {
+        fold ctx.eventInv(principal, event, prev)
+    }
+}
+
+ghost
+decreases
+requires noPerm < p && p <= writePerm
+requires acc(ctx.eventInv(principal, event, prev), p)
+ensures  acc(ctx.eventInv(principal, event, prev), p)
+ensures  ctx.pureEventInv(principal, event, prev)
+func (ctx NslContext) getPureEventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry, p perm) {
+    assert unfolding acc(ctx.eventInv(principal, event, prev), p) in true
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.eventInv(principal, event, t1)
+ensures  ctx.eventInv(principal, event, t2)
+func (ctx NslContext) eventInvMonotonic(principal p.Principal, event ev.Event, t1, t2 tr.TraceEntry) {
+    unfold ctx.eventInv(principal, event, t1)
+    ctx.pureEventInvMonotonic(principal, event, t1, t2)
+    fold ctx.eventInv(principal, event, t2)
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.pureEventInv(principal, event, t1)
+ensures  ctx.pureEventInv(principal, event, t2)
+func (ctx NslContext) pureEventInvMonotonic(principal p.Principal, event ev.Event, t1, t2 tr.TraceEntry) {
+    if (ctx.isFinishI(event)) {
+        params := ctx.getFinishIParams(event)
+        GetNslLabeling().IsLabeledMonotonic(t1, t2, params.na, label.Readers(set[p.Id]{ p.principalId(principal), p.principalId(params.b) }))
+        if GetNslLabeling().IsPublishable(t1, params.nb) {
+            GetNslLabeling().IsPublishableMonotonic(t1, t2, params.nb)
+        } else {
+            GetNslLabeling().IsLabeledMonotonic(t1, t2, params.nb, label.Readers(set[p.Id]{ p.principalId(principal), p.principalId(params.b) }))
+        }
+        respondEv := ev.NewEvent(Respond, RespondParams{ params.a, params.b, params.na, params.nb })
+        if (t1.eventOccurs(params.b, respondEv)) {
+            t1.eventOccursMonotonic(t2, params.b, respondEv)
+        } else {
+            t1.getCorruptIdsMonotonic(t2)
+        }
+    }
+    if (ctx.isFinishR(event)) {
+        params := ctx.getFinishRParams(event)
+        respondEv := ev.NewEvent(Respond, RespondParams{ params.a, params.b, params.na, params.nb })
+        t1.eventOccursMonotonic(t2, principal, respondEv)
+        finishIEv := ev.NewEvent(FinishI, FinishIParams{ params.a, params.b, params.na, params.nb })
+        if (t1.eventOccurs(params.a, finishIEv)) {
+            t1.eventOccursMonotonic(t2, params.a, finishIEv)
+        } else {
+            t1.getCorruptIdsMonotonic(t2)
+        }
+    }
+}
+
+ghost
+decreases
+requires ctx.Props()
+ensures res != nil
+pure func (ctx NslContext) GetUsageContext() (res UsageContext) {
+    return ctx.usage
+}
+
+type NslUsageContext struct {}
+NslUsageContext implements UsageContext
+
+ghost
+decreases
+pure func (ctx NslUsageContext) GetUsage(t tm.Term) option[u.Usage] {
+    return t.IsRandom() ? some(tm.getRandomUsage(t)) :
+        none[u.Usage]
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) PkePred(t tr.TraceEntry, usageString string, plaintext, pk tm.Term) bool {
+    // note that we trigger on `Readers` and `ppred`
+    return exists skOwner p.Principal :: { label.Readers(set[p.Id]{ p.principalId(skOwner) }) } { ctx.ppred(t, usageString, plaintext, pk, skOwner) } ctx.ppred(t, usageString, plaintext, pk, skOwner)
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.PkePred(t1, usageString, plaintext, pk)
+ensures  ctx.PkePred(t2, usageString, plaintext, pk)
+func (ctx NslUsageContext) PkePredMonotonic(t1, t2 tr.TraceEntry, usageString string, plaintext, pk tm.Term) {
+    // get skOwner witness:
+    assert exists skOwner p.Principal :: { ctx.ppred(t1, usageString, plaintext, pk, skOwner) } ctx.ppred(t1, usageString, plaintext, pk, skOwner)
+    skOwner := arb.GetArbPrincipal()
+    assume ctx.ppred(t1, usageString, plaintext, pk, skOwner)
+    ctx.ppredMonotonic(t1, t2, usageString, plaintext, pk, skOwner)
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) AeadPred(t tr.TraceEntry, usageString string, key, nonce, plaintext, authtext tm.Term) bool {
+    return false // NSL does not perform any AEAD encryption
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.AeadPred(t1, usageString, key, nonce, plaintext, authtext)
+ensures  ctx.AeadPred(t2, usageString, key, nonce, plaintext, authtext)
+func (ctx NslUsageContext) AeadPredMonotonic(t1, t2 tr.TraceEntry, usageString string, key, nonce, plaintext, authtext tm.Term) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) SignPred(t tr.TraceEntry, usageString string, msg, sk tm.Term) bool {
+    return false // NSL does not perform any signing
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.SignPred(t1, usageString, msg, sk)
+ensures  ctx.SignPred(t2, usageString, msg, sk)
+func (ctx NslUsageContext) SignPredMonotonic(t1, t2 tr.TraceEntry, usageString string, msg, sk tm.Term) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) IsMsg1(plaintext, pk tm.Term) bool {
+    return plaintext.IsTuple3() && tm.getTupleElem(plaintext, 0) == tm.integer32(1)
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) IsMsg2(plaintext, pk tm.Term) bool {
+    return plaintext.IsTuple4() && tm.getTupleElem(plaintext, 0) == tm.integer32(2)
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) IsMsg3(plaintext, pk tm.Term) bool {
+    return plaintext.IsTuple2() && tm.getTupleElem(plaintext, 0) == tm.integer32(3)
+}
+
+ghost
+decreases
+pure func (ctx NslUsageContext) ppred(t tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal) bool {
+    return label.Readers(set[p.Id]{ p.principalId(skOwner) }) == GetNslLabeling().GetSkLabel(pk) &&
+        (ctx.IsMsg1(plaintext, pk) ==>
+            t.nonceOccurs(tm.getTupleElem(plaintext, 1), label.Readers(set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(plaintext, 2))), p.principalId(skOwner) }), u.Nonce(NslNonce)) &&
+            t.eventOccurs(tm.getString(tm.getTupleElem(plaintext, 2)), ev.NewEvent(Initiate, InitiateParams{ tm.getString(tm.getTupleElem(plaintext, 2)), skOwner, tm.getTupleElem(plaintext, 1) }))) &&
+        (ctx.IsMsg2(plaintext, pk) ==>
+            t.nonceOccurs(tm.getTupleElem(plaintext, 2), label.Readers(set[p.Id]{ p.principalId(skOwner), p.principalId(tm.getString(tm.getTupleElem(plaintext, 3))) }), u.Nonce(NslNonce)) &&
+            t.eventOccurs(tm.getString(tm.getTupleElem(plaintext, 3)), ev.NewEvent(Respond, RespondParams{ skOwner, tm.getString(tm.getTupleElem(plaintext, 3)), tm.getTupleElem(plaintext, 1), tm.getTupleElem(plaintext, 2) }))) &&
+        (ctx.IsMsg3(plaintext, pk) ==>
+            exists idA p.Principal, na tm.Term :: { t.eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, skOwner, na, tm.getTupleElem(plaintext, 1) })) } t.eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, skOwner, na, tm.getTupleElem(plaintext, 1) })))
+}
+
+ghost
+decreases
+requires ctx.ppred(t, usageString, plaintext, pk, skOwner)
+ensures  forall usageString2 string :: ctx.ppred(t, usageString2, plaintext, pk, skOwner)
+func (ctx NslUsageContext) ppredForAllUsages(t tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal, idA p.Principal) {
+    // no body needed
+}
+
+ghost
+decreases
+requires ctx.IsMsg3(plaintext, pk)
+requires label.Readers(set[p.Id]{ p.principalId(skOwner) }) == GetNslLabeling().GetSkLabel(pk)
+requires t.eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, skOwner, na, tm.getTupleElem(plaintext, 1) }))
+ensures  ctx.ppred(t, usageString, plaintext, pk, skOwner)
+func (ctx NslUsageContext) ppredShowWitness(t tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal, idA p.Principal, na tm.Term) {
+    // no body needed
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.ppred(t1, usageString, plaintext, pk, skOwner)
+ensures  ctx.ppred(t2, usageString, plaintext, pk, skOwner)
+func (ctx NslUsageContext) ppredMonotonic(t1, t2 tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal) {
+    if (ctx.IsMsg1(plaintext, pk)) {
+        t1.nonceOccursMonotonic(t2, tm.getTupleElem(plaintext, 1), label.Readers(set[p.Id]{ p.principalId(tm.getString(tm.getTupleElem(plaintext, 2))), p.principalId(skOwner) }), u.Nonce(NslNonce))
+        t1.eventOccursMonotonic(t2, tm.getString(tm.getTupleElem(plaintext, 2)), ev.NewEvent(Initiate, InitiateParams{ tm.getString(tm.getTupleElem(plaintext, 2)), skOwner, tm.getTupleElem(plaintext, 1) }))
+    } else if (ctx.IsMsg2(plaintext, pk)) {
+        t1.nonceOccursMonotonic(t2, tm.getTupleElem(plaintext, 2), label.Readers(set[p.Id]{ p.principalId(skOwner), p.principalId(tm.getString(tm.getTupleElem(plaintext, 3))) }), u.Nonce(NslNonce))
+        t1.eventOccursMonotonic(t2, tm.getString(tm.getTupleElem(plaintext, 3)), ev.NewEvent(Respond, RespondParams{ skOwner, tm.getString(tm.getTupleElem(plaintext, 3)), tm.getTupleElem(plaintext, 1), tm.getTupleElem(plaintext, 2) }))
+    } else if (ctx.IsMsg3(plaintext, pk)) {
+        assert exists idA p.Principal, na tm.Term :: t1.eventOccurs(idA, ev.NewEvent(FinishI, FinishIParams{ idA, skOwner, na, tm.getTupleElem(plaintext, 1) }))
+        arbIdA := arb.GetArbPrincipal()
+        arbNa := arb.GetArbTerm()
+        assume t1.eventOccurs(arbIdA, ev.NewEvent(FinishI, FinishIParams{ arbIdA, skOwner, arbNa, tm.getTupleElem(plaintext, 1) }))
+        t1.eventOccursMonotonic(t2, arbIdA, ev.NewEvent(FinishI, FinishIParams{ arbIdA, skOwner, arbNa, tm.getTupleElem(plaintext, 1) }))
+    }
+}

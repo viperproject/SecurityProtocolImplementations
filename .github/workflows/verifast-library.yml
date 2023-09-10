@@ -1,0 +1,29 @@
+name: Verification of Reusable Verification Library in C
+
+on:
+  push:
+
+jobs:
+  build-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERIFAST_VERSION: 21.04
+    steps:
+      - name: Install prerequisites
+        run: sudo apt-get update && sudo apt-get install -y git curl tar libgomp1
+
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Download and Setup VeriFast
+        run: |
+          curl -q -s -S -L --create-dirs -o VeriFast.zip https://github.com/verifast/verifast/releases/download/${{ env.VERIFAST_VERSION }}/verifast-${{ env.VERIFAST_VERSION }}-linux.tar.gz
+          tar xzf VeriFast.zip
+          # this creates a folder called 'verifast-${{ env.VERIFAST_VERSION }}'
+          VERIFAST_BIN="$PWD/verifast-${{ env.VERIFAST_VERSION }}/bin"
+          echo "$VERIFAST_BIN" >> $GITHUB_PATH
+
+      - name: Verify Reusable Verification Library in VeriFast
+        run: ./verify.sh
+        working-directory: VeriFastPrototype/reusable_verification_library

@@ -1,0 +1,1076 @@
+package common
+
+import arb "github.com/viperproject/ReusableProtocolVerificationLibrary/arbitrary"
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+import tri "github.com/viperproject/ReusableProtocolVerificationLibrary/traceinvariant"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+import . "github.com/viperproject/ReusableProtocolVerificationLibrary/usagecontext"
+
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/common"
+
+
+const WgKey = "WG Key"
+const WgNonce = "WG Nonce"
+const WgEphemeralSk = "WG Ephemeral Private Key"
+// WgCXInput = input key to KDF function for generating CX
+const WgC1Input = "WG C1 Input"
+const WgC2Input = "WG C2 Input"
+const WgC3Input = "WG C3 Input"
+const WgC4Input = "WG C4 Input"
+const WgC5Input = "WG C5 Input"
+const WgC6Input = "WG C6 Input"
+const WgC7Input = "WG C7 Input"
+// WGCX = usage of result of applying KDF function
+const WgC1 = "WG C1"
+const WgC2 = "WG C2"
+const WgC3 = "WG C3"
+const WgC4 = "WG C4"
+const WgC5 = "WG C5"
+const WgC6 = "WG C6"
+const WgK1 = "WG K1"
+const WgK2 = "Wg K2"
+const WgK3 = "Wg K3"
+// WgChaininigKey == WgC7
+const WgChaininigKey = "WG Chaining Key" // input key to KDF1 and KDF2 to generate WgSendingKey and WgReceivingKey
+const WgKir = "WG kir Key"
+const WgKri = "WG kri Key"
+
+
+type WgContext struct {
+    usage UsageContext
+}
+// the following line is just a sanity check that WgContext is indeed a subtype 
+// of TraceContext (even though the implementation proof can be completely inferred):
+WgContext implements tri.TraceContext {}
+
+// TODO make ghost
+decreases
+ensures res.Props()
+pure func GetWgContext() (res WgContext) {
+    return WgContext{ WgUsageContext{ } }
+}
+
+ghost
+decreases
+pure func GetWgLabeling() LabelingContext {
+    return GetLabelingContext(WgUsageContext{ })
+}
+
+ghost
+decreases
+pure func GetWgUsage() WgUsageContext {
+    return WgUsageContext{ }
+}
+
+ghost
+decreases
+requires sessId.getSession() != none[uint32]
+pure func getSid(sessId p.Id) tm.Term {
+    return tm.integer32(p.getIdSession(sessId))
+}
+
+ghost
+decreases
+pure func (ctx WgContext) IsUnique(typ ev.EventType) bool {
+    return typ == SendSidI || typ == SendSidR || typ == SendFirstInit || typ == ReceivedFirstResp
+}
+
+ghost
+decreases
+requires ctx.IsUnique(event.typ)
+requires ctx.EventConsistency(event)
+pure func (ctx WgContext) UniquenessWitness(event ev.Event) tm.Term {
+     return ctx.isSendSidI(event) ?
+        ctx.getSendSidIParams(event).ekI :
+            ctx.isSendSidR(event) ? 
+                ctx.getSendSidRParams(event).ekR :
+                    ctx.isSendFirstInit(event) ?
+                        ctx.getSendFirstInitParams(event).ekI :
+                            ctx.getReceivedFirstRespParams(event).ekR
+}
+
+ghost
+decreases
+requires ctx.Props()
+requires ctx.IsUnique(event.typ)
+requires ctx.eventInv(principal, event, prev)
+ensures  ctx.pureEventInv(principal, event, prev)
+ensures  nonce == ctx.UniquenessWitness(event)
+ensures  GetWgLabeling().NonceForEventIsUnique(nonce, event.typ)
+ensures  GetWgLabeling().NonceForEventIsUnique(nonce, event.typ) --* ctx.eventInv(principal, event, prev)
+func (ctx WgContext) isUniqueImpliesUniqueResource(principal p.Principal, event ev.Event, prev tr.TraceEntry) (nonce tm.Term) {
+    unfold ctx.eventInv(principal, event, prev)
+    nonce = ctx.UniquenessWitness(event)
+    package GetWgLabeling().NonceForEventIsUnique(nonce, event.typ) --* ctx.eventInv(principal, event, prev) {
+        fold ctx.eventInv(principal, event, prev)
+    }
+}
+
+ghost
+decreases
+pure func (ctx WgContext) isSendSidI(event ev.Event) bool {
+    return event.typ == SendSidI
+}
+
+ghost
+decreases
+pure func (ctx WgContext) isSendSidR(event ev.Event) bool {
+    return event.typ == SendSidR
+}
+
+ghost
+decreases
+pure func (ctx WgContext) isSendFirstInit(event ev.Event) bool {
+    return event.typ == SendFirstInit
+}
+
+ghost
+decreases
+pure func (ctx WgContext) isReceivedFirstResp(event ev.Event) bool {
+    return event.typ == ReceivedFirstResp
+}
+
+ghost
+decreases
+requires ctx.isSendSidI(event)
+requires ctx.EventConsistency(event)
+pure func (ctx WgContext) getSendSidIParams(event ev.Event) SendSidIParams {
+    return (event.params).(SendSidIParams)
+}
+
+ghost
+decreases
+requires ctx.isSendSidR(event)
+requires ctx.EventConsistency(event)
+pure func (ctx WgContext) getSendSidRParams(event ev.Event) SendSidRParams {
+    return (event.params).(SendSidRParams)
+}
+
+ghost
+decreases
+requires ctx.isSendFirstInit(event)
+requires ctx.EventConsistency(event)
+pure func (ctx WgContext) getSendFirstInitParams(event ev.Event) SendFirstInitParams {
+    return (event.params).(SendFirstInitParams)
+}
+
+ghost
+decreases
+requires ctx.isReceivedFirstResp(event)
+requires ctx.EventConsistency(event)
+pure func (ctx WgContext) getReceivedFirstRespParams(event ev.Event) ReceivedFirstRespParams {
+    return (event.params).(ReceivedFirstRespParams)
+}
+
+ghost
+decreases
+pure func (ctx WgContext) Props() bool {
+    return ctx.usage != nil && ctx.usage == WgUsageContext{ }
+}
+
+pred (ctx WgContext) eventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry) {
+    ctx.pureEventInv(principal, event, prev) &&
+    (ctx.isSendSidI(event) ==> GetWgLabeling().NonceForEventIsUnique((ctx.getSendSidIParams(event)).ekI, event.typ)) &&
+    (ctx.isSendSidR(event) ==> GetWgLabeling().NonceForEventIsUnique((ctx.getSendSidRParams(event)).ekR, event.typ)) &&
+    (ctx.isSendFirstInit(event) ==> GetWgLabeling().NonceForEventIsUnique((ctx.getSendFirstInitParams(event)).ekI, event.typ)) &&
+    (ctx.isReceivedFirstResp(event) ==> GetWgLabeling().NonceForEventIsUnique((ctx.getReceivedFirstRespParams(event)).ekR, event.typ))
+}
+
+ghost
+decreases
+pure func (ctx WgContext) EventConsistency(event ev.Event) bool {
+    return (ctx.isSendSidI(event) ==> typeOf(event.params) == SendSidIParams) &&
+        (ctx.isSendSidR(event) ==> typeOf(event.params) == SendSidRParams) &&
+        (ctx.isSendFirstInit(event) ==> typeOf(event.params) == SendFirstInitParams) &&
+        (ctx.isReceivedFirstResp(event) ==> typeOf(event.params) == ReceivedFirstRespParams)
+}
+
+ghost
+decreases
+requires aSessId.getSession() != none[uint32]
+pure func sendSidIEv(ekI, epkI tm.Term, aSessId, bId p.Id) ev.Event {
+    return ev.NewEvent(SendSidI, SendSidIParams{ aSessId.getPrincipal(), bId.getPrincipal(), ekI , epkI })
+}
+
+ghost
+decreases
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func sendSidREv(epkI, ekR, kirT, kriT tm.Term, aSessId, bSessId p.Id) ev.Event {
+    return ev.NewEvent(SendSidR, SendSidRParams{ aSessId.getPrincipal(), bSessId.getPrincipal(), tm.getInt32(getSid(bSessId)), epkI, ekR, kirT, kriT })
+}
+
+ghost
+decreases
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func sendFirstInitEv(ekI, ekR, kirT, kriT tm.Term, aSessId, bSessId p.Id) ev.Event {
+    return ev.NewEvent(SendFirstInit, SendFirstInitParams{ aSessId.getPrincipal(), bSessId.getPrincipal(), tm.getInt32(getSid(aSessId)), tm.getInt32(getSid(bSessId)), ekI, tm.exp(tm.generator(), ekI), ekR, kirT, kriT })
+}
+
+ghost
+decreases
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func receivedFirstRespEv(ekI, ekR, kirT, kriT tm.Term, aSessId, bSessId p.Id) ev.Event {
+    return ev.NewEvent(ReceivedFirstResp, ReceivedFirstRespParams{ aSessId.getPrincipal(), bSessId.getPrincipal(), tm.getInt32(getSid(aSessId)), tm.getInt32(getSid(bSessId)), ekI, tm.exp(tm.generator(), ekI), ekR, kirT, kriT })
+}
+
+ghost
+decreases
+pure func (ctx WgContext) pureEventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry) bool {
+    return ctx.Props() &&
+        ctx.EventConsistency(event) &&
+        (ctx.isSendSidI(event) ==>
+            principal == ctx.getSendSidIParams(event).a &&
+            (exists aSess uint32 :: { p.sessionId(principal, aSess) } (
+                GetWgLabeling().IsPublicKey(prev, p.sessionId(principal, aSess), ctx.getSendSidIParams(event).epkI, ctx.getSendSidIParams(event).ekI, KeyTypeDh(), WgEphemeralSk)))) &&
+        (ctx.isSendSidR(event) ==>
+            principal == ctx.getSendSidRParams(event).b &&
+            GetWgLabeling().IsSecretKey(prev, p.sessionId(principal, ctx.getSendSidRParams(event).bSess), ctx.getSendSidRParams(event).ekR, KeyTypeDh(), WgEphemeralSk) &&
+            (tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.principalId(ctx.getSendSidRParams(event).a), p.principalId(principal) }) ||
+                (exists ekI tm.Term :: { SendSidIParams{ ctx.getSendSidRParams(event).a, principal, ekI, ctx.getSendSidRParams(event).epkI } } (
+                    prev.eventOccurs(ctx.getSendSidRParams(event).a, ev.NewEvent(SendSidI, SendSidIParams{ ctx.getSendSidRParams(event).a, principal, ekI, ctx.getSendSidRParams(event).epkI })))))) &&
+        (ctx.isSendFirstInit(event) ==>
+            principal == ctx.getSendFirstInitParams(event).a &&
+            GetWgUsage().hasKirStructure(ctx.getSendFirstInitParams(event).kIR) &&
+            prev.eventOccurs(principal, ev.NewEvent(SendSidI, SendSidIParams{ principal, ctx.getSendFirstInitParams(event).b, ctx.getSendFirstInitParams(event).ekI, tm.exp(tm.generator(), ctx.getSendFirstInitParams(event).ekI) })) &&
+            GetWgLabeling().IsPublicKeyExistential(prev, p.sessionId(principal, ctx.getSendFirstInitParams(event).aSess), tm.exp(tm.generator(), ctx.getSendFirstInitParams(event).ekI), KeyTypeDh(), WgEphemeralSk) &&
+            (tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.sessionId(principal, ctx.getSendFirstInitParams(event).aSess), p.principalId(ctx.getSendFirstInitParams(event).b) }) ||
+                prev.eventOccurs(ctx.getSendFirstInitParams(event).b, ev.NewEvent(SendSidR, SendSidRParams{ principal, ctx.getSendFirstInitParams(event).b, ctx.getSendFirstInitParams(event).bSess, tm.exp(tm.generator(), ctx.getSendFirstInitParams(event).ekI), ctx.getSendFirstInitParams(event).ekR, ctx.getSendFirstInitParams(event).kIR, ctx.getSendFirstInitParams(event).kRI }))) &&
+            (GetWgLabeling().IsPublishable(prev, ctx.getSendFirstInitParams(event).kIR) ||
+                GetWgLabeling().IsLabeledPrecise(prev, ctx.getSendFirstInitParams(event).kIR, Label_k_IRPrecise(p.sessionId(principal, ctx.getSendFirstInitParams(event).aSess), p.sessionId(ctx.getSendFirstInitParams(event).b, ctx.getSendFirstInitParams(event).bSess))) &&
+                GetWgLabeling().CanFlow(prev, GetWgLabeling().GetLabel(GetWgUsage().getDhStaticEphemeral(ctx.getSendFirstInitParams(event).kIR)), GetWgLabeling().GetLabel(ctx.getSendFirstInitParams(event).kIR)))) &&
+        (ctx.isReceivedFirstResp(event) ==>
+            principal == ctx.getReceivedFirstRespParams(event).b &&
+            GetWgUsage().hasKirStructure(ctx.getReceivedFirstRespParams(event).kIR) &&
+            (tr.containsCorruptId(prev.getCorruptIds(), set[p.Id]{ p.principalId(ctx.getReceivedFirstRespParams(event).a), p.sessionId(principal, ctx.getReceivedFirstRespParams(event).bSess) }) ||
+                prev.eventOccurs(ctx.getReceivedFirstRespParams(event).a, ev.NewEvent(SendFirstInit, SendFirstInitParams{ ctx.getReceivedFirstRespParams(event).a, principal, ctx.getReceivedFirstRespParams(event).aSess, ctx.getReceivedFirstRespParams(event).bSess, ctx.getReceivedFirstRespParams(event).ekI, ctx.getReceivedFirstRespParams(event).epkI, ctx.getReceivedFirstRespParams(event).ekR, ctx.getReceivedFirstRespParams(event).kIR, ctx.getReceivedFirstRespParams(event).kRI }))))
+}
+
+ghost
+decreases
+requires ctx.pureEventInv(principal, event, prev)
+ensures  ctx.EventConsistency(event)
+func (ctx WgContext) eventInvImpliesConsistency(principal p.Principal, event ev.Event, prev tr.TraceEntry) {
+    // no body needed
+}
+
+ghost
+decreases
+requires noPerm < p && p <= writePerm
+requires acc(ctx.eventInv(principal, event, prev), p)
+ensures  acc(ctx.eventInv(principal, event, prev), p)
+ensures  ctx.pureEventInv(principal, event, prev)
+func (ctx WgContext) getPureEventInv(principal p.Principal, event ev.Event, prev tr.TraceEntry, p perm) {
+    assert unfolding acc(ctx.eventInv(principal, event, prev), p) in true
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.eventInv(principal, event, t1)
+ensures  ctx.eventInv(principal, event, t2)
+func (ctx WgContext) eventInvMonotonic(principal p.Principal, event ev.Event, t1, t2 tr.TraceEntry) {
+    unfold ctx.eventInv(principal, event, t1)
+    ctx.pureEventInvMonotonic(principal, event, t1, t2)
+    fold ctx.eventInv(principal, event, t2)
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.pureEventInv(principal, event, t1)
+ensures  ctx.pureEventInv(principal, event, t2)
+func (ctx WgContext) pureEventInvMonotonic(principal p.Principal, event ev.Event, t1, t2 tr.TraceEntry) {
+    if ctx.isSendSidI(event) {
+        ekI := ctx.getSendSidIParams(event).ekI
+        epkI := ctx.getSendSidIParams(event).epkI
+        assert exists aSess uint32 :: { p.sessionId(principal, aSess) } GetWgLabeling().IsPublicKey(t1, p.sessionId(principal, aSess), epkI, ekI, KeyTypeDh(), WgEphemeralSk)
+        // get witness:
+        aSess := arb.GetArbUInt32()
+        assume GetWgLabeling().IsPublicKey(t1, p.sessionId(principal, aSess), epkI, ekI, KeyTypeDh(), WgEphemeralSk)
+        GetWgLabeling().IsPublicKeyMonotonic(t1, t2, p.sessionId(principal, aSess), epkI, ekI, KeyTypeDh(), WgEphemeralSk)
+    } else if ctx.isSendSidR(event) {
+        a := ctx.getSendSidRParams(event).a
+        bSess := ctx.getSendSidRParams(event).bSess
+        epkI := ctx.getSendSidRParams(event).epkI
+        ekR := ctx.getSendSidRParams(event).ekR
+        kIR := ctx.getSendSidRParams(event).kIR
+        kRI := ctx.getSendSidRParams(event).kRI
+        GetWgLabeling().IsSecretKeyMonotonic(t1, t2, p.sessionId(principal, bSess), ekR, KeyTypeDh(), WgEphemeralSk)
+        if tr.containsCorruptId(t1.getCorruptIds(), set[p.Id]{ p.principalId(a), p.principalId(principal) }) {
+            t1.getCorruptIdsMonotonic(t2)
+            GetWgLabeling().containsCorruptIdMonotonic2(t1.getCorruptIds(), t2.getCorruptIds(), set[p.Id]{ p.principalId(a), p.principalId(principal) })
+        } else {
+            assert exists ekI tm.Term :: { SendSidIParams{ a, principal, ekI, epkI } } (
+                t1.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, principal, ekI, epkI })))
+            // get witness:
+            ekI := arb.GetArbTerm()
+            assume t1.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, principal, ekI, epkI }))
+            t1.eventOccursMonotonic(t2, a, ev.NewEvent(SendSidI, SendSidIParams{ a, principal, ekI, epkI }))
+        }
+    } else if ctx.isSendFirstInit(event) {
+        b := ctx.getSendFirstInitParams(event).b
+        aSess := ctx.getSendFirstInitParams(event).aSess
+        bSess := ctx.getSendFirstInitParams(event).bSess
+        ekI := ctx.getSendFirstInitParams(event).ekI
+        epkI := ctx.getSendFirstInitParams(event).epkI
+        ekR := ctx.getSendFirstInitParams(event).ekR
+        kIR := ctx.getSendFirstInitParams(event).kIR
+        kRI := ctx.getSendFirstInitParams(event).kRI
+        t1.eventOccursMonotonic(t2, principal, ev.NewEvent(SendSidI, SendSidIParams{ principal, b, ekI, tm.exp(tm.generator(), ekI) }))
+        GetWgLabeling().IsPublicKeyExistentialMonotonic(t1, t2, p.sessionId(principal, aSess), tm.exp(tm.generator(), ekI), KeyTypeDh(), WgEphemeralSk)
+        if tr.containsCorruptId(t1.getCorruptIds(), set[p.Id]{ p.sessionId(principal, aSess), p.principalId(b) }) {
+            t1.getCorruptIdsMonotonic(t2)
+            GetWgLabeling().containsCorruptIdMonotonic2(t1.getCorruptIds(), t2.getCorruptIds(), set[p.Id]{ p.sessionId(principal, aSess), p.principalId(b) })
+        } else {
+            t1.eventOccursMonotonic(t2, b, ev.NewEvent(SendSidR, SendSidRParams{ principal, b, bSess, tm.exp(tm.generator(), ekI), ekR, kIR, kRI }))
+        }
+        if GetWgLabeling().IsPublishable(t1, kIR) {
+            GetWgLabeling().IsPublishableMonotonic(t1, t2, kIR)
+        } else {
+            GetWgLabeling().IsLabeledPreciseMonotonic(t1, t2, kIR, Label_k_IRPrecise(p.sessionId(principal, aSess), p.sessionId(b, bSess)))
+            GetWgLabeling().CanFlowMonotonic(t1, t2, GetWgLabeling().GetLabel(GetWgUsage().getDhStaticEphemeral(kIR)), GetWgLabeling().GetLabel(kIR))
+        }
+    } else if ctx.isReceivedFirstResp(event) {
+        a := ctx.getReceivedFirstRespParams(event).a
+        aSess := ctx.getReceivedFirstRespParams(event).aSess
+        bSess := ctx.getReceivedFirstRespParams(event).bSess
+        ekI := ctx.getReceivedFirstRespParams(event).ekI
+        epkI := ctx.getReceivedFirstRespParams(event).epkI
+        ekR := ctx.getReceivedFirstRespParams(event).ekR
+        kIR := ctx.getReceivedFirstRespParams(event).kIR
+        kRI := ctx.getReceivedFirstRespParams(event).kRI
+        if tr.containsCorruptId(t1.getCorruptIds(), set[p.Id]{ p.principalId(a), p.sessionId(principal, bSess) }) {
+            t1.getCorruptIdsMonotonic(t2)
+            GetWgLabeling().containsCorruptIdMonotonic2(t1.getCorruptIds(), t2.getCorruptIds(), set[p.Id]{ p.principalId(a), p.sessionId(principal, bSess) })
+        } else {
+            t1.eventOccursMonotonic(t2, a, ev.NewEvent(SendFirstInit, SendFirstInitParams{ a, principal, aSess, bSess, ekI, epkI, ekR, kIR, kRI }))
+        }
+    }
+}
+
+ghost
+decreases
+requires ctx.Props()
+ensures res != nil
+pure func (ctx WgContext) GetUsageContext() (res UsageContext) {
+    return ctx.usage
+}
+
+type WgUsageContext struct {
+    dummy int
+}
+WgUsageContext implements UsageContext
+
+/** 
+ * constant expressing minimal 2nd parameter for `GetUsageInternal`.
+ * This parameter is only used to prove termination because we have multiple 
+ * mutually recursive calls.
+ */
+const MIN_GET_USAGE_INTERNAL_MEASURE = 3
+
+ghost
+decreases
+pure func (ctx WgUsageContext) GetUsage(t tm.Term) option[u.Usage] {
+    return ctx.GetUsageInternal(t, MIN_GET_USAGE_INTERNAL_MEASURE)
+}
+
+ghost
+decreases tm.getTermHeight(t), mutualRecursionTrick
+requires mutualRecursionTrick >= MIN_GET_USAGE_INTERNAL_MEASURE
+pure func (ctx WgUsageContext) GetUsageInternal(t tm.Term, mutualRecursionTrick int) option[u.Usage] {
+    return t.IsRandom() ? some(tm.getRandomUsage(t)) :
+        (t.IsKdf() && ctx.HasKdfUsage(tm.getInput(t), MIN_GET_USAGE_INTERNAL_MEASURE + 1)) ? ctx.KdfUsage(t, ctx.GetKdfUsageString(tm.getInput(t), MIN_GET_USAGE_INTERNAL_MEASURE + 2)) :
+        t.IsTuple2() ? ctx.Tuple2Usage(t, mutualRecursionTrick - 1) :
+        none[u.Usage]
+}
+
+ghost
+decreases
+requires v1 >= MIN_GET_USAGE_INTERNAL_MEASURE && v2 >= MIN_GET_USAGE_INTERNAL_MEASURE
+ensures  ctx.GetUsageInternal(t, v1) == ctx.GetUsageInternal(t, v2)
+func (ctx WgUsageContext) GetUsageInternalIndependentOf2ndParam(t tm.Term, v1, v2 int) {
+    if t.IsTuple2() {
+        ctx.Tuple2UsageIndependentOf2ndParam(t, v1 - 1, v2 - 1)
+    }
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) PkePred(t tr.TraceEntry, usageString string, plaintext, pk tm.Term) bool {
+    // note that we trigger on `Readers` and `ppred`
+    return exists skOwner p.Principal :: { label.Readers(set[p.Id]{ p.principalId(skOwner) }) } { ctx.ppred(t, usageString, plaintext, pk, skOwner) } ctx.ppred(t, usageString, plaintext, pk, skOwner)
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.PkePred(t1, usageString, plaintext, pk)
+ensures  ctx.PkePred(t2, usageString, plaintext, pk)
+func (ctx WgUsageContext) PkePredMonotonic(t1, t2 tr.TraceEntry, usageString string, plaintext, pk tm.Term) {
+    // get skOwner witness:
+    assert exists skOwner p.Principal :: { ctx.ppred(t1, usageString, plaintext, pk, skOwner) } ctx.ppred(t1, usageString, plaintext, pk, skOwner)
+    skOwner := arb.GetArbPrincipal()
+    assume ctx.ppred(t1, usageString, plaintext, pk, skOwner)
+    ctx.ppredMonotonic(t1, t2, usageString, plaintext, pk, skOwner)
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) AeadPred(t tr.TraceEntry, usageString string, key, nonce, plaintext, authtext tm.Term) bool {
+    // IsLabeled should not be mentioned here or in a callee to ensure good triggering of IsValid, IsLabeled, etc.
+    return usageString == WgK2 ? ctx.ctsPred(t, key, plaintext, authtext) :
+        usageString == WgK3 ? ctx.cemptyPred(t, key, authtext) :
+        usageString == WgKir ? ctx.payloadToResponderPred(t, key, plaintext) : true
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) ctsPred(t tr.TraceEntry, key, plaintext, authtext tm.Term) bool {
+    // we use `ctsPred` specify that epkI is an emphemeral DH key
+    // to so, we make use of `exp(pkI, kR)`'s label
+    return ctx.hasK2Structure(key) &&
+        ctx.hasH3Structure(authtext) &&
+        GetWgLabeling().GetLabel(plaintext) == label.Public() && // the timestamp is assumed to be public knowledge
+        (forall a, b p.Principal, skI tm.Term :: { ctx.ctsPredLhs(key, authtext, a, b, skI) } (
+            ctx.ctsPredLhs(key, authtext, a, b, skI) ==>
+                ctx.ctsPredRhs(t, authtext, a, b, skI)))
+}
+
+ghost
+decreases
+requires ctx.hasK2Structure(key)
+requires ctx.hasH3Structure(authtext)
+pure func (ctx WgUsageContext) ctsPredLhs(key, authtext tm.Term, a, b p.Principal, skI tm.Term) bool {
+    return GetWgLabeling().GetLabel(ctx.getLtShareFromK2(key)) == label.Join(label.Readers(set[p.Id]{ p.principalId(a) }), label.Readers(set[p.Id]{ p.principalId(b) })) &&
+        GetWgLabeling().GetLabel(skI) == label.Readers(set[p.Id]{ p.principalId(a) }) &&
+        ctx.getPkIFromH3(authtext) == tm.exp(tm.generator(), skI)
+}
+
+ghost
+decreases
+requires ctx.hasH3Structure(authtext)
+pure func (ctx WgUsageContext) ctsPredRhs(t tr.TraceEntry, authtext tm.Term, a, b p.Principal, skI tm.Term) bool {
+    return exists ekI tm.Term :: { t.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, b, ekI, ctx.getEpkIFromH3(authtext) })) } (
+        ctx.getEpkIFromH3(authtext) == tm.exp(tm.generator(), ekI) &&
+        t.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, b, ekI, ctx.getEpkIFromH3(authtext) })))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasK2Structure(k2 tm.Term) bool {
+    return k2.IsKdf2() &&
+        tm.getInput(k2).IsTuple2()
+}
+
+ghost
+decreases
+requires ctx.hasK2Structure(k2)
+pure func (ctx WgUsageContext) getLtShareFromK2(k2 tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(k2), 1)
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasH3Structure(h3 tm.Term) bool {
+    return h3.IsHash() &&
+        tm.getInput(h3).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(h3), 0).IsHash() && // `tm.getTupleElem(tm.getInput(h3), 0)` is h2
+        tm.getInput(tm.getTupleElem(tm.getInput(h3), 0)).IsTuple2() &&
+        // we also specify that cpkI is an aead:
+        tm.getTupleElem(tm.getInput(h3), 1).IsAead()
+}
+
+ghost
+decreases
+requires ctx.hasH3Structure(h3)
+pure func (ctx WgUsageContext) getEpkIFromH3(h3 tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h3), 0)), 1)
+}
+
+ghost
+decreases
+requires ctx.hasH3Structure(h3)
+pure func (ctx WgUsageContext) getPkIFromH3(h3 tm.Term) tm.Term {
+    return tm.getPlaintext(tm.getTupleElem(tm.getInput(h3), 1))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) cemptyPred(t tr.TraceEntry, key, authtext tm.Term) bool {    
+    return ctx.hasH6Structure(authtext) &&
+        ctx.hasK3Structure(key) &&
+        (forall a, b p.Principal, skI, skR tm.Term :: { ctx.cemptyPredLhs(authtext, a, b, skI, skR) } (
+            ctx.cemptyPredLhs(authtext, a, b, skI, skR) ==> 
+                ctx.cemptyPredRhs(t, key, authtext, a, b, skI, skR)))
+}
+
+ghost
+decreases
+requires ctx.hasH6Structure(authtext)
+pure func (ctx WgUsageContext) cemptyPredLhs(authtext tm.Term, a, b p.Principal, skI, skR tm.Term) bool {
+    return skI.IsRandom() && GetWgLabeling().GetLabel(skI) == label.Readers(set[p.Id]{ p.principalId(a) }) &&
+        skR.IsRandom() && GetWgLabeling().GetLabel(skR) == label.Readers(set[p.Id]{ p.principalId(b) }) &&
+        ctx.getPkIFromH6(authtext) == tm.exp(tm.generator(), skI) &&
+        ctx.getPkRFromH6(authtext) == tm.exp(tm.generator(), skR)
+}
+
+ghost
+decreases
+requires ctx.hasK3Structure(key)
+requires ctx.hasH6Structure(authtext)
+pure func (ctx WgUsageContext) cemptyPredRhs(t tr.TraceEntry, key, authtext tm.Term, a, b p.Principal, skI, skR tm.Term) bool {
+    return exists bSess uint32, ekR tm.Term :: { t.eventOccurs(b, ev.NewEvent(SendSidR, SendSidRParams{ a, b, bSess, ctx.getEpkIFromH6(authtext), ekR, ctx.getKirFromK3(key), ctx.getKriFromK3(key) })) } (
+        ekR.IsRandom() && GetWgLabeling().GetLabel(ekR) == label.Readers(set[p.Id]{ p.sessionId(b, bSess) }) &&
+        ctx.getEpkRFromH6(authtext) == tm.exp(tm.generator(), ekR) &&
+        t.eventOccurs(b, ev.NewEvent(SendSidR, SendSidRParams{ a, b, bSess, ctx.getEpkIFromH6(authtext), ekR, ctx.getKirFromK3(key), ctx.getKriFromK3(key) })))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasH6Structure(h6 tm.Term) bool {
+    return h6.IsHash() &&
+        tm.getInput(h6).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(h6), 0).IsHash() && // `tm.getTupleElem(tm.getInput(authtext), 0)` is h5
+        tm.getInput(tm.getTupleElem(tm.getInput(h6), 0)).IsTuple2() &&
+        ctx.hasH4Structure(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h6), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasH6Structure(h6)
+pure func (ctx WgUsageContext) getEpkRFromH6(h6 tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h6), 0)), 1)
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasH4Structure(h4 tm.Term) bool {
+    return h4.IsHash() &&
+        tm.getInput(h4).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(h4), 0).IsHash() && // `tm.getTupleElem(tm.getInput(h4), 0)` is h3
+        tm.getInput(tm.getTupleElem(tm.getInput(h4), 0)).IsTuple2() &&
+        ctx.hasH2Structure(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h4), 0)), 0)) &&
+        ctx.hasCpkIStructure(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h4), 0)), 1))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasH2Structure(h2 tm.Term) bool {
+    return h2.IsHash() &&
+        tm.getInput(h2).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(h2), 0).IsHash() && // `tm.getTupleElem(tm.getInput(h2), 0)` is h1
+        tm.getInput(tm.getTupleElem(tm.getInput(h2), 0)).IsTuple2()
+}
+
+ghost
+decreases
+requires ctx.hasH6Structure(h6)
+pure func (ctx WgUsageContext) getPkRFromH6(h6 tm.Term) tm.Term {
+    return ctx.getPkRFromH4(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h6), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasH6Structure(h6)
+pure func (ctx WgUsageContext) getEpkIFromH6(h6 tm.Term) tm.Term {
+    return ctx.getEpkIFromH4(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h6), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasH4Structure(h4)
+pure func (ctx WgUsageContext) getPkRFromH4(h4 tm.Term) tm.Term {
+    return ctx.getPkRFromH2(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h4), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasH4Structure(h4)
+pure func (ctx WgUsageContext) getEpkIFromH4(h4 tm.Term) tm.Term {
+    return ctx.getEpkIFromH2(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h4), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasH2Structure(h2)
+pure func (ctx WgUsageContext) getPkRFromH2(h2 tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h2), 0)), 1)
+}
+
+ghost
+decreases
+requires ctx.hasH2Structure(h2)
+pure func (ctx WgUsageContext) getEpkIFromH2(h2 tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(h2), 1)
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasCpkIStructure(cpkI tm.Term) bool {
+    return cpkI.IsAead()
+}
+
+ghost
+decreases
+requires ctx.hasH6Structure(h6)
+pure func (ctx WgUsageContext) getPkIFromH6(h6 tm.Term) tm.Term {
+    return ctx.getPkIFromH4(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h6), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasH4Structure(h4)
+pure func (ctx WgUsageContext) getPkIFromH4(h4 tm.Term) tm.Term {
+    return ctx.getPkIFromCpkI(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(h4), 0)), 1))
+}
+
+ghost
+decreases
+requires ctx.hasCpkIStructure(cpkI)
+pure func (ctx WgUsageContext) getPkIFromCpkI(cpkI tm.Term) tm.Term {
+    return tm.getPlaintext(cpkI)
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasK3Structure(k3 tm.Term) bool {
+    return k3.IsKdf3() &&
+        tm.getInput(k3).IsTuple2() &&
+        // `tm.getTupleElem(tm.getInput(k3), 0)` is c6
+        tm.getTupleElem(tm.getInput(k3), 0).IsKdf1() &&
+        tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)).IsTuple2() &&
+        // `tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0)` is c5
+        tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0).IsKdf1() &&
+        tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0)).IsTuple2() &&
+        // `tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0)), 0)` is c4
+        tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0)), 0).IsKdf1() &&
+        tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0)), 0)).IsTuple2()
+}
+
+ghost
+decreases
+requires ctx.hasK3Structure(k3)
+pure func (ctx WgUsageContext) getC3FromK3(k3 tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(k3), 0)), 0)), 0)), 0)
+}
+
+ghost
+decreases
+requires ctx.hasK3Structure(k3)
+pure func (ctx WgUsageContext) getC7FromK3(k3 tm.Term) tm.Term {
+    return tm.kdf1(tm.getInput(k3))
+}
+
+ghost
+decreases
+requires ctx.hasK3Structure(k3)
+pure func (ctx WgUsageContext) getKirFromK3(k3 tm.Term) tm.Term {
+    return tm.kdf1(ctx.getC7FromK3(k3))
+}
+
+ghost
+decreases
+requires ctx.hasK3Structure(k3)
+pure func (ctx WgUsageContext) getKriFromK3(k3 tm.Term) tm.Term {
+    return tm.kdf2(ctx.getC7FromK3(k3))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) payloadToResponderPred(t tr.TraceEntry, kirT, plaintext tm.Term) bool {
+    return ctx.hasKirStructure(kirT) &&
+        (GetWgLabeling().CanFlow(t, GetWgLabeling().GetLabel(kirT), label.Public()) ||
+            ctx.payloadToResponderPredContent(t, kirT))
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+pure func (ctx WgUsageContext) payloadToResponderPredContent(t tr.TraceEntry, kirT tm.Term) bool {
+    return forall a, b p.Principal, bSess uint32, epkI, ekR tm.Term :: { ctx.payloadToResponderPredContentLhs(kirT, a, b, bSess, epkI, ekR) } (
+        ctx.payloadToResponderPredContentLhs(kirT, a, b, bSess, epkI, ekR) ==>
+            ctx.payloadToResponderPredContentRhs(t, kirT, a, b, bSess, epkI, ekR))
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+pure func (ctx WgUsageContext) payloadToResponderPredContentLhs(kirT tm.Term, a, b p.Principal, bSess uint32, epkI, ekR tm.Term) bool {
+    return GetWgLabeling().GetLabel(ctx.getDhStaticFromKir(kirT)) == label.Join(label.Readers(set[p.Id]{ p.principalId(a) }), label.Readers(set[p.Id]{ p.principalId(b) })) &&
+        ctx.getEpkIFromKir(kirT) == epkI &&
+        ctx.getEpkRFromKir(kirT) == tm.exp(tm.generator(), ekR) &&
+        GetWgLabeling().GetLabel(ekR) == label.Readers(set[p.Id]{ p.sessionId(b, bSess) })
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+pure func (ctx WgUsageContext) payloadToResponderPredContentRhs(t tr.TraceEntry, kirT tm.Term, a, b p.Principal, bSess uint32, epkI, ekR tm.Term) bool {
+    return exists aSess uint32, ekI tm.Term :: { SendFirstInitParams{ a, b, aSess, bSess, ekI, tm.exp(tm.generator(), ekI), ekR, kirT, tm.kdf2(tm.getInput(kirT)) } } (
+        epkI == tm.exp(tm.generator(), ekI) &&
+        GetWgLabeling().GetLabel(ekI) == label.Readers(set[p.Id]{ p.sessionId(a, aSess) }) &&
+        GetWgLabeling().GetLabel(kirT) == Label_k_IR(p.sessionId(a, aSess), p.sessionId(b, bSess)) &&
+        t.eventOccurs(a, ev.NewEvent(SendFirstInit, SendFirstInitParams{ a, b, aSess, bSess, ekI, tm.exp(tm.generator(), ekI), ekR, kirT, tm.kdf2(tm.getInput(kirT)) })))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasKirStructure(kirT tm.Term) bool {
+    return kirT.IsKdf1() &&
+        tm.getInput(kirT).IsKdf1() && // `tm.getInput(kirT)` returns c7T
+        tm.getInput(tm.getInput(kirT)).IsTuple2() &&
+        ctx.hasC6Structure(tm.getTupleElem(tm.getInput(tm.getInput(kirT)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+pure func (ctx WgUsageContext) getDhStaticFromKir(kirT tm.Term) tm.Term {
+    return ctx.getDhStaticFromC6(tm.getTupleElem(tm.getInput(tm.getInput(kirT)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+pure func (ctx WgUsageContext) getEpkIFromKir(kirT tm.Term) tm.Term {
+    return ctx.getEpkIFromC6(tm.getTupleElem(tm.getInput(tm.getInput(kirT)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+pure func (ctx WgUsageContext) getEpkRFromKir(kirT tm.Term) tm.Term {
+return ctx.getEpkRFromC6(tm.getTupleElem(tm.getInput(tm.getInput(kirT)), 0))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasC6Structure(c6T tm.Term) bool {
+    return c6T.IsKdf1() &&
+        tm.getInput(c6T).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(c6T), 0).IsKdf1() && // `tm.getTupleElem(tm.getInput(c6T), 0)` returns c5T
+        tm.getInput(tm.getTupleElem(tm.getInput(c6T), 0)).IsTuple2() &&
+        ctx.hasC4Structure(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c6T), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasC6Structure(c6T)
+pure func (ctx WgUsageContext) getDhStaticFromC6(c6T tm.Term) tm.Term {
+    return ctx.getDhStaticFromC4(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c6T), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasC6Structure(c6T)
+pure func (ctx WgUsageContext) getEpkIFromC6(c6T tm.Term) tm.Term {
+    return ctx.getEpkIFromC4(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c6T), 0)), 0))
+}
+
+ghost
+decreases
+requires ctx.hasC6Structure(c6T)
+pure func (ctx WgUsageContext) getEpkRFromC6(c6T tm.Term) tm.Term {
+    return ctx.getEpkRFromC4(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c6T), 0)), 0))
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasC4Structure(c4T tm.Term) bool {
+    return c4T.IsKdf1() &&
+        tm.getInput(c4T).IsTuple2() &&
+        ctx.hasC3Structure(tm.getTupleElem(tm.getInput(c4T), 0))
+}
+
+ghost
+decreases
+requires ctx.hasC4Structure(c4T)
+pure func (ctx WgUsageContext) getDhStaticFromC4(c4T tm.Term) tm.Term {
+    return ctx.getDhStaticFromC3(tm.getTupleElem(tm.getInput(c4T), 0))
+}
+
+ghost
+decreases
+requires ctx.hasC4Structure(c4T)
+pure func (ctx WgUsageContext) getEpkIFromC4(c4T tm.Term) tm.Term {
+    return ctx.getEpkIFromC3(tm.getTupleElem(tm.getInput(c4T), 0))
+}
+
+ghost
+decreases
+requires ctx.hasC4Structure(c4T)
+pure func (ctx WgUsageContext) getEpkRFromC4(c4T tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(c4T), 1)
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) hasC3Structure(c3T tm.Term) bool {
+    return c3T.IsKdf1() &&
+        tm.getInput(c3T).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(c3T), 0).IsKdf1() && // `tm.getTupleElem(tm.getInput(c3T), 0)` returns c2T
+        tm.getInput(tm.getTupleElem(tm.getInput(c3T), 0)).IsTuple2() &&
+        tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c3T), 0)), 0).IsKdf1() && // `tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c3T), 0)), 0)` returns c1T
+        tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c3T), 0)), 0)).IsTuple2()
+}
+
+ghost
+decreases
+requires ctx.hasC3Structure(c3T)
+pure func (ctx WgUsageContext) getDhStaticFromC3(c3T tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(c3T), 1)
+}
+
+ghost
+decreases
+requires ctx.hasC3Structure(c3T)
+pure func (ctx WgUsageContext) getEpkIFromC3(c3T tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(c3T), 0)), 0)), 1)
+}
+
+ghost
+decreases
+requires ctx.hasKirStructure(kirT)
+// returns `exp(epkR, kI)` resp. `exp(pkI, ekR)`
+pure func (ctx WgUsageContext) getDhStaticEphemeral(kirT tm.Term) tm.Term {
+    return tm.getTupleElem(tm.getInput(tm.getTupleElem(tm.getInput(tm.getInput(kirT)), 0)), 1)
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.AeadPred(t1, usageString, key, nonce, plaintext, authtext)
+ensures  ctx.AeadPred(t2, usageString, key, nonce, plaintext, authtext)
+func (ctx WgUsageContext) AeadPredMonotonic(t1, t2 tr.TraceEntry, usageString string, key, nonce, plaintext, authtext tm.Term) {
+    if usageString == WgK2 {
+        ctx.ctsPredMonotonic(t1, t2, key, plaintext, authtext)
+    } else if usageString == WgK3 {
+        ctx.cemptyPredMonotonic(t1, t2, key, authtext)
+    } else if usageString == WgKir {
+        ctx.payloadToResponderPredMonotonic(t1, t2, key, plaintext)
+    }
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.ctsPred(t1, key, plaintext, authtext)
+ensures  ctx.ctsPred(t2, key, plaintext, authtext)
+func (ctx WgUsageContext) ctsPredMonotonic(t1, t2 tr.TraceEntry, key, plaintext, authtext tm.Term) {
+    a := arb.GetArbPrincipal()
+    b := arb.GetArbPrincipal()
+    skI := arb.GetArbTerm()
+    if ctx.ctsPredLhs(key, authtext, a, b, skI) {
+        assert ctx.ctsPredRhs(t1, authtext, a, b, skI)
+        assert exists ekI tm.Term :: { t1.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, b, ekI, ctx.getEpkIFromH3(authtext) })) } (
+            ctx.getEpkIFromH3(authtext) == tm.exp(tm.generator(), ekI) &&
+            t1.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, b, ekI, ctx.getEpkIFromH3(authtext) })))
+        // get witness
+        ekI := arb.GetArbTerm()
+        assume ctx.getEpkIFromH3(authtext) == tm.exp(tm.generator(), ekI) &&
+            t1.eventOccurs(a, ev.NewEvent(SendSidI, SendSidIParams{ a, b, ekI, ctx.getEpkIFromH3(authtext) }))
+        t1.eventOccursMonotonic(t2, a, ev.NewEvent(SendSidI, SendSidIParams{ a, b, ekI, ctx.getEpkIFromH3(authtext) }))
+    }
+    assert ctx.ctsPredLhs(key, authtext, a, b, skI) ==>
+        ctx.ctsPredRhs(t2, authtext, a, b, skI)
+    // we have shown it for arbitrary a, b, and skI:
+    assume forall a, b p.Principal, skI tm.Term :: { ctx.ctsPredLhs(key, authtext, a, b, skI) } (
+        ctx.ctsPredLhs(key, authtext, a, b, skI) ==>
+            ctx.ctsPredRhs(t2, authtext, a, b, skI))
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.cemptyPred(t1, key, authtext)
+ensures  ctx.cemptyPred(t2, key, authtext)
+func (ctx WgUsageContext) cemptyPredMonotonic(t1, t2 tr.TraceEntry, key, authtext tm.Term) {
+    a := arb.GetArbPrincipal()
+    b := arb.GetArbPrincipal()
+    skI := arb.GetArbTerm()
+    skR := arb.GetArbTerm()
+    if ctx.cemptyPredLhs(authtext, a, b, skI, skR) {
+        assert ctx.cemptyPredRhs(t1, key, authtext, a, b, skI, skR)
+        assert exists bSess uint32, ekR tm.Term :: { t1.eventOccurs(b, ev.NewEvent(SendSidR, SendSidRParams{ a, b, bSess, ctx.getEpkIFromH6(authtext), ekR, ctx.getKirFromK3(key), ctx.getKriFromK3(key) })) } (
+            ekR.IsRandom() && GetWgLabeling().GetLabel(ekR) == label.Readers(set[p.Id]{ p.sessionId(b, bSess) }) &&
+            ctx.getEpkRFromH6(authtext) == tm.exp(tm.generator(), ekR) &&
+            t1.eventOccurs(b, ev.NewEvent(SendSidR, SendSidRParams{ a, b, bSess, ctx.getEpkIFromH6(authtext), ekR, ctx.getKirFromK3(key), ctx.getKriFromK3(key) })))
+        // get witness
+        bSess := arb.GetArbUInt32()
+        ekR := arb.GetArbTerm()
+        assume ekR.IsRandom() && GetWgLabeling().GetLabel(ekR) == label.Readers(set[p.Id]{ p.sessionId(b, bSess) }) &&
+            ctx.getEpkRFromH6(authtext) == tm.exp(tm.generator(), ekR) &&
+            t1.eventOccurs(b, ev.NewEvent(SendSidR, SendSidRParams{ a, b, bSess, ctx.getEpkIFromH6(authtext), ekR, ctx.getKirFromK3(key), ctx.getKriFromK3(key) }))
+        t1.eventOccursMonotonic(t2, b, ev.NewEvent(SendSidR, SendSidRParams{ a, b, bSess, ctx.getEpkIFromH6(authtext), ekR, ctx.getKirFromK3(key), ctx.getKriFromK3(key) }))
+    }
+    assert ctx.cemptyPredLhs(authtext, a, b, skI, skR) ==>
+        ctx.cemptyPredRhs(t2, key, authtext, a, b, skI, skR)
+    // we have shown it for arbitrary a, b, skI, and skR:
+    assume forall a, b p.Principal, skI, skR tm.Term :: { ctx.cemptyPredLhs(authtext, a, b, skI, skR) } (
+        ctx.cemptyPredLhs(authtext, a, b, skI, skR) ==>
+            ctx.cemptyPredRhs(t2, key, authtext, a, b, skI, skR))
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.payloadToResponderPred(t1, kirT, plaintext)
+ensures  ctx.payloadToResponderPred(t2, kirT, plaintext)
+func (ctx WgUsageContext) payloadToResponderPredMonotonic(t1, t2 tr.TraceEntry, kirT, plaintext tm.Term) {
+    if GetWgLabeling().CanFlow(t1, GetWgLabeling().GetLabel(kirT), label.Public()) {
+        GetWgLabeling().CanFlowMonotonic(t1, t2, GetWgLabeling().GetLabel(kirT), label.Public())
+    } else {
+        a := arb.GetArbPrincipal()
+        b := arb.GetArbPrincipal()
+        bSess := arb.GetArbUInt32()
+        epkI := arb.GetArbTerm()
+        ekR := arb.GetArbTerm()
+        if ctx.payloadToResponderPredContentLhs(kirT, a, b, bSess, epkI, ekR) {
+            assert ctx.payloadToResponderPredContentRhs(t1, kirT, a, b, bSess, epkI, ekR)
+            assert exists aSess uint32, ekI tm.Term :: { SendFirstInitParams{ a, b, aSess, bSess, ekI, tm.exp(tm.generator(), ekI), ekR, kirT, tm.kdf2(tm.getInput(kirT)) } } (
+                epkI == tm.exp(tm.generator(), ekI) &&
+                GetWgLabeling().GetLabel(ekI) == label.Readers(set[p.Id]{ p.sessionId(a, aSess) }) &&
+                GetWgLabeling().GetLabel(kirT) == Label_k_IR(p.sessionId(a, aSess), p.sessionId(b, bSess)) &&
+                t1.eventOccurs(a, ev.NewEvent(SendFirstInit, SendFirstInitParams{ a, b, aSess, bSess, ekI, tm.exp(tm.generator(), ekI), ekR, kirT, tm.kdf2(tm.getInput(kirT)) })))
+            // get witness
+            aSess := arb.GetArbUInt32()
+            ekI := arb.GetArbTerm()
+            assume epkI == tm.exp(tm.generator(), ekI) &&
+                GetWgLabeling().GetLabel(ekI) == label.Readers(set[p.Id]{ p.sessionId(a, aSess) }) &&
+                GetWgLabeling().GetLabel(kirT) == Label_k_IR(p.sessionId(a, aSess), p.sessionId(b, bSess)) &&
+                t1.eventOccurs(a, ev.NewEvent(SendFirstInit, SendFirstInitParams{ a, b, aSess, bSess, ekI, tm.exp(tm.generator(), ekI), ekR, kirT, tm.kdf2(tm.getInput(kirT)) }))
+            t1.eventOccursMonotonic(t2, a, ev.NewEvent(SendFirstInit, SendFirstInitParams{ a, b, aSess, bSess, ekI, tm.exp(tm.generator(), ekI), ekR, kirT, tm.kdf2(tm.getInput(kirT)) }))
+        }
+        assert ctx.payloadToResponderPredContentLhs(kirT, a, b, bSess, epkI, ekR) ==>
+            ctx.payloadToResponderPredContentRhs(t2, kirT, a, b, bSess, epkI, ekR)
+        // we have shown it for arbitrary a, b, bSess, epkI, and ekR:
+        assume forall a, b p.Principal, bSess uint32, epkI, ekR tm.Term :: { ctx.payloadToResponderPredContentLhs(kirT, a, b, bSess, epkI, ekR) } (
+            ctx.payloadToResponderPredContentLhs(kirT, a, b, bSess, epkI, ekR) ==>
+                ctx.payloadToResponderPredContentRhs(t2, kirT, a, b, bSess, epkI, ekR))
+    }
+}
+
+ghost
+decreases tm.getTermHeight(t), mutualRecursionTrick
+requires mutualRecursionTrick >= MIN_GET_USAGE_INTERNAL_MEASURE + 1
+/** input is the term that is used as key argument to a KDF function */
+pure func (ctx WgUsageContext) HasKdfUsage(t tm.Term, mutualRecursionTrick int) bool {
+    return ctx.GetUsageInternal(t, mutualRecursionTrick - 1) != none[u.Usage] &&
+        get(ctx.GetUsageInternal(t, mutualRecursionTrick - 1)).IsKdfKey()
+}
+
+ghost
+decreases
+requires v1 >= MIN_GET_USAGE_INTERNAL_MEASURE + 1 && v2 >= MIN_GET_USAGE_INTERNAL_MEASURE + 1
+requires ctx.HasKdfUsage(t, v1)
+ensures  ctx.HasKdfUsage(t, v2)
+func (ctx WgUsageContext) HasKdfUsageIndependentFromDecreasesMeasure(t tm.Term, v1, v2 int) {
+    ctx.GetUsageInternalIndependentOf2ndParam(t, v1 - 1, v2 - 1)
+}
+
+ghost
+decreases tm.getTermHeight(t), mutualRecursionTrick
+requires mutualRecursionTrick >= MIN_GET_USAGE_INTERNAL_MEASURE + 2 && ctx.HasKdfUsage(t, mutualRecursionTrick - 1)
+pure func (ctx WgUsageContext) GetKdfUsageString(t tm.Term, mutualRecursionTrick int) string {
+    return u.GetUsageString(get(ctx.GetUsageInternal(t, mutualRecursionTrick - 1)))
+}
+
+ghost
+decreases
+requires v1 >= MIN_GET_USAGE_INTERNAL_MEASURE + 2 && v2 >= MIN_GET_USAGE_INTERNAL_MEASURE + 2 && ctx.HasKdfUsage(t, v1 - 1)
+ensures  ctx.HasKdfUsage(t, v2 - 1)
+ensures  ctx.GetKdfUsageString(t, v1) == ctx.GetKdfUsageString(t, v2)
+func (ctx WgUsageContext) GetKdfUsageStringIndependentFromDecreasesMeasure(t tm.Term, v1, v2 int) {
+    ctx.HasKdfUsageIndependentFromDecreasesMeasure(t, v1 - 1, v2 - 1)
+    ctx.GetUsageInternalIndependentOf2ndParam(t, v1 - 1, v2 - 1)
+}
+
+ghost
+decreases
+requires kdfTerm.IsKdf()
+/** allows to customize the usage for `kdfTerm` for an input key with usage `usageString` */
+pure func (ctx WgUsageContext) KdfUsage(kdfTerm tm.Term, usageString string) option[u.Usage] {
+    return (kdfTerm.IsKdf1() && usageString == WgC1Input) ? some(u.KdfKey(WgC1)) :
+        (kdfTerm.IsKdf1() && usageString == WgC2Input) ? some(u.KdfKey(WgC2)) :
+        (kdfTerm.IsKdf2() && usageString == WgC2Input) ? some(u.AeadKey(WgK1)) :
+        (kdfTerm.IsKdf1() && usageString == WgC3Input) ? some(u.KdfKey(WgC3)) :
+        (kdfTerm.IsKdf2() && usageString == WgC3Input) ? some(u.AeadKey(WgK2)) :
+        (kdfTerm.IsKdf1() && usageString == WgC4Input) ? some(u.KdfKey(WgC4)) :
+        (kdfTerm.IsKdf1() && usageString == WgC5Input) ? some(u.KdfKey(WgC5)) :
+        (kdfTerm.IsKdf1() && usageString == WgC6Input) ? some(u.KdfKey(WgC6)) :
+        (kdfTerm.IsKdf1() && usageString == WgC7Input) ? some(u.KdfKey(WgChaininigKey)) :
+        (kdfTerm.IsKdf3() && usageString == WgC7Input) ? some(u.AeadKey(WgK3)) :
+        (kdfTerm.IsKdf1() && usageString == WgChaininigKey) ? some(u.AeadKey(WgKir)) :
+        (kdfTerm.IsKdf2() && usageString == WgChaininigKey) ? some(u.AeadKey(WgKri)) :
+            none[u.Usage]
+}
+
+ghost
+decreases tm.getTermHeight(t), mutualRecursionTrick
+requires t.IsTuple2() && mutualRecursionTrick >= 0
+/** allows to customize the usage for `t` */
+pure func (ctx WgUsageContext) Tuple2Usage(t tm.Term, mutualRecursionTrick int) option[u.Usage] {
+    return tm.getTupleElem(t, 0) == Term_c0() ? some(u.KdfKey(WgC1Input)) :
+        (ctx.HasKdfUsage(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 1) && ctx.GetKdfUsageString(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC1) ? some(u.KdfKey(WgC2Input)) :
+        (ctx.HasKdfUsage(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 1) && ctx.GetKdfUsageString(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC2) ? some(u.KdfKey(WgC3Input)) :
+        (ctx.HasKdfUsage(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 1) && ctx.GetKdfUsageString(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC3) ? some(u.KdfKey(WgC4Input)) :
+        (ctx.HasKdfUsage(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 1) && ctx.GetKdfUsageString(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC4) ? some(u.KdfKey(WgC5Input)) :
+        (ctx.HasKdfUsage(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 1) && ctx.GetKdfUsageString(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC5) ? some(u.KdfKey(WgC6Input)) :
+        (ctx.HasKdfUsage(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 1) && ctx.GetKdfUsageString(tm.getTupleElem(t, 0), MIN_GET_USAGE_INTERNAL_MEASURE + 2) == WgC6) ? some(u.KdfKey(WgC7Input)) :
+            none[u.Usage]
+}
+
+ghost
+decreases
+requires t.IsTuple2() && v1 >= 0 && v2 >= 0
+ensures ctx.Tuple2Usage(t, v1) == ctx.Tuple2Usage(t, v2)
+func (ctx WgUsageContext) Tuple2UsageIndependentOf2ndParam(t tm.Term, v1, v2 int) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) ppred(t tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal) bool {
+    return true
+}
+
+ghost
+decreases
+requires ctx.ppred(t, usageString, plaintext, pk, skOwner)
+ensures  forall usageString2 string :: ctx.ppred(t, usageString2, plaintext, pk, skOwner)
+func (ctx WgUsageContext) ppredForAllUsages(t tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal, idA p.Principal, na tm.Term) {
+    // no body needed
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.ppred(t1, usageString, plaintext, pk, skOwner)
+ensures  ctx.ppred(t2, usageString, plaintext, pk, skOwner)
+func (ctx WgUsageContext) ppredMonotonic(t1, t2 tr.TraceEntry, usageString string, plaintext, pk tm.Term, skOwner p.Principal) {
+    // no body needed
+}
+
+ghost
+decreases
+pure func (ctx WgUsageContext) SignPred(t tr.TraceEntry, usageString string, msg, sk tm.Term) bool {
+    return false // WireGuard does not perform any signing
+}
+
+ghost
+decreases
+requires t1.isSuffix(t2)
+requires ctx.SignPred(t1, usageString, msg, sk)
+ensures  ctx.SignPred(t2, usageString, msg, sk)
+func (ctx WgUsageContext) SignPredMonotonic(t1, t2 tr.TraceEntry, usageString string, msg, sk tm.Term) {
+    // no body needed
+}

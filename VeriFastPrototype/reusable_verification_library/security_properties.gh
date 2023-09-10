@@ -1,0 +1,77 @@
+#ifndef SECURITY_PROPERTIES
+#define SECURITY_PROPERTIES
+
+#include "quantifiers.gh"
+#include "attacker.gh"
+#include "event_functions.gh"
+#include "labeling.gh"
+#include "term.gh"
+#include "trace_entry.gh"
+
+
+fixpoint bool Secrecy<t>(Term term, trace<EventParams> snapshot, list<int> honestIds, PkePred pkePred) {
+    return (isLabeled(term, snapshot, Readers(honestIds), pkePred) &&
+        !attackerKnows(snapshot, term)) || 
+            containsCorruptId(getCorruptIds(snapshot), honestIds);
+}
+
+fixpoint bool NonInjectiveAgreement(trace<EventParams> snapshot, int actor,int peer, int commit_type, EventParams commit, int running_type, EventParams running, list<int> honestIds) {
+    return eventConsistency(running, running_type) &&
+        eventConsistency(commit, commit_type) &&
+        isUnique(commit_type) &&
+        eventOccurs(snapshot, actor, newEvent(commit_type, commit)) &&
+        ( // there is another running session with the same parameters...
+            eventOccurs(getEventTrace(snapshot, actor, newEvent(commit_type, commit)), peer, newEvent(running_type, running))||
+        ( // ... or corruption has occurred:
+            containsCorruptId(getCorruptIds(getEventTrace(snapshot, actor, newEvent(commit_type, commit))), honestIds)));
+}
+
+inductive triple<a, b, c> = triple(a, b, c);
+
+fixpoint a triple_fst<a, b, c>(triple<a, b, c> p) {
+    switch (p) {
+        case triple(x, y, z): return x;
+    }
+}
+
+fixpoint b triple_snd<a, b, c>(triple<a, b, c> p) {
+    switch (p) {
+        case triple(x, y, z): return y;
+    }
+}
+
+fixpoint c triple_thrd<a, b, c>(triple<a, b, c> p) {
+    switch (p) {
+        case triple(x, y, z): return z;
+    }
+}
+
+fixpoint bool matchingEventDoesNotOccur(Trace snapshot, int principal, ParameterizedEvent event, triple<int, ParameterizedEvent, int> quantifier) {
+    switch (quantifier) {
+        case triple(principal2, event2, idx):
+            return (getEventType(event) != getEventType(event2) ||
+                !eventConsistency(getEventParams(event2), getEventType(event2)) ||
+                eventUniquenessWitness(event) != eventUniquenessWitness(event2) ||
+                idx == eventOccursAtTime(snapshot, principal, event) - 1 ||
+                !eventOccursAt(snapshot, principal2, event2, idx));
+    }
+}
+
+#define QuantifiedTriple triple<int, ParameterizedEvent, int>
+
+predicate EventIsUnique(Trace snapshot, int principal, ParameterizedEvent event) =
+    switch (event) {
+        case newEvent(type, params):
+            return eventConsistency(params, type) && isUnique(type);
+    } &*&
+    eventOccurs(snapshot, principal, event) == true &*&
+    [_]is_forall_t<QuantifiedTriple>(?quantifiedExp) &*&
+    quantifiedExp((matchingEventDoesNotOccur)(snapshot, principal, event)) == true;
+
+predicate InjectiveAgreement(trace<EventParams> snapshot, int actor, int peer, int commit_type, EventParams commit, int running_type, EventParams running,list<int> honestIds) =
+    NonInjectiveAgreement(snapshot, actor, peer, commit_type, commit, running_type, running, honestIds) == true &*&
+    isUnique(commit_type) == true &*& 
+    (!containsCorruptId(getCorruptIds(getEventTrace(snapshot, actor, newEvent(commit_type, commit))), honestIds)) == true ? 
+        EventIsUnique(snapshot, actor, newEvent(commit_type, commit)) : true;
+
+#endif

@@ -1,0 +1,469 @@
+package responder
+
+import att "github.com/viperproject/ReusableProtocolVerificationLibrary/attacker"
+import ev "github.com/viperproject/ReusableProtocolVerificationLibrary/event"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/label"
+import ll "github.com/viperproject/ReusableProtocolVerificationLibrary/labeledlibrary"
+import "github.com/viperproject/ReusableProtocolVerificationLibrary/labeling"
+import p "github.com/viperproject/ReusableProtocolVerificationLibrary/principal"
+import tm "github.com/viperproject/ReusableProtocolVerificationLibrary/term"
+import tr "github.com/viperproject/ReusableProtocolVerificationLibrary/trace"
+import u "github.com/viperproject/ReusableProtocolVerificationLibrary/usage"
+
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/common"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma/common"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/labellemma/responder"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/common"
+import . "github.com/viperproject/ProtocolVerificationCaseStudies/wireguard/verification/messages/responder"
+
+
+ghost
+requires ResponderMem(responder)
+requires responder.transportKeysLabelingBeforeRecvFirstMsg(epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.transportKeysLabelingBeforeRecvFirstMsg(epkIX, ekrT, kirT, kriT, aSess, corrupted)
+// weak forward secrecy for kir & kri:
+ensures  transportKeysWeakForwardSecrecy(responder.Snapshot(), epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+func (responder *Responder) proveSecurityProperties(epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) {
+    responder.ProveWeakForwardSecret(epkIX, ekrT, kirT, kriT, aSess, corrupted)
+}
+
+ghost
+requires ResponderMem(responder)
+requires responder.transportKeysLabelingAfterRecvFirstMsg(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.transportKeysLabelingAfterRecvFirstMsg(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+// strong forward secrecy for kir & kri:
+ensures  transportKeysStrongForwardSecrecy(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+// injective agreement with KCI resistance on kir & kri:
+ensures  responder.InjectiveAgreementWithKCIResistance(responder.getASessId(aSess), responder.getBSessId(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), sendFirstInitEv(ekiT, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()))
+func (responder *Responder) proveSecurityPropertiesAfter(ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) {
+    responder.ProveStrongForwardSecret(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+    responder.ProveInjectiveAgreementWithKCIResistance(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+}
+
+ghost
+requires acc(ResponderMem(responder), _)
+pure func (responder *Responder) transportKeysLabelingBeforeRecvFirstMsg(epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) bool {
+    return responder.transportKeysLabelingWithSnapBeforeRecvFirstMsg(responder.Snapshot(), epkIX, ekrT, kirT, kriT, aSess, corrupted)
+}
+
+ghost
+requires acc(ResponderMem(responder), _)
+pure func (responder *Responder) transportKeysLabelingWithSnapBeforeRecvFirstMsg(snap tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) bool {
+    return GetWgLabeling().GetLabel(kirT) == GetWgLabeling().GetLabel(kriT) &&
+        GetWgLabeling().IsSecretRelaxed(snap, kirT, label.Readers(set[p.Id]{ responder.getAId(), responder.getBSessId() }), u.AeadKey(WgReceivingKey)) &&
+        GetWgLabeling().IsSecretRelaxed(snap, kriT, label.Readers(set[p.Id]{ responder.getAId(), responder.getBSessId() }), u.AeadKey(WgSendingKey)) &&
+        sentSidR(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()) &&
+        GetWgLabeling().IsLabeledRelaxed(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), kirT, label.Readers(set[p.Id]{ responder.getAId(), responder.getBSessId() })) &&
+        GetWgLabeling().IsLabeledRelaxed(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), kriT, label.Readers(set[p.Id]{ responder.getAId(), responder.getBSessId() })) &&
+        GetWgUsage().hasKirStructure(kirT) &&
+        kriT == tm.kdf2(tm.getInput(kirT)) &&
+        GetWgUsage().getEpkIFromKir(kirT) == epkIX &&
+        GetWgUsage().getEpkRFromKir(kirT) == tm.exp(tm.generator(), ekrT) &&
+        GetWgLabeling().IsSecretKey(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), responder.getBSessId(), ekrT, labeling.KeyTypeDh(), WgEphemeralSk) &&
+        GetWgLabeling().IsLabeled(snap, GetWgUsage().getDhStaticFromKir(kirT), Label_DhStatic(responder.getAId(), responder.getBId())) &&
+        GetWgLabeling().IsLabeled(snap, GetWgUsage().getDhStaticEphemeral(kirT), Label_DhStaticEphemeral(responder.getAId(), responder.getBSessId())) &&
+        (corrupted == !GetWgLabeling().IsPublicKeyExistential(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), responder.getASessId(aSess), epkIX, labeling.KeyTypeDh(), WgEphemeralSk)) &&
+        (corrupted ==> tr.containsCorruptId(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()).getCorruptIds(), set[p.Id]{ responder.getAId(), responder.getBId() })) &&
+        (!corrupted ==> (
+            // the following snapshots can be relaxed to be "snap" instead of "prefix":
+            GetWgLabeling().IsLabeledRelaxed(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), kirT, label.Readers(set[p.Id]{ responder.getASessId(aSess), responder.getBSessId() })) &&
+            GetWgLabeling().IsLabeledPrecise(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), kirT, Label_k_IRPrecise(responder.getASessId(aSess), responder.getBSessId())) &&
+            GetWgLabeling().GetLabel(kirT) == Label_k_IR(responder.getASessId(aSess), responder.getBSessId()) &&
+            GetWgLabeling().IsLabeledRelaxed(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), kriT, label.Readers(set[p.Id]{ responder.getASessId(aSess), responder.getBSessId() })) &&
+            GetWgLabeling().IsLabeledPrecise(getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), kriT, Label_k_RIPrecise(responder.getASessId(aSess), responder.getBSessId())) &&
+            GetWgLabeling().GetLabel(kriT) == Label_k_RI(responder.getASessId(aSess), responder.getBSessId())))
+}
+
+ghost
+requires acc(ResponderMem(responder), _)
+pure func (responder *Responder) transportKeysLabelingAfterRecvFirstMsg(ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) bool {
+    return responder.transportKeysLabelingWithSnapAfterRecvFirstMsg(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+}
+
+ghost
+requires acc(ResponderMem(responder), _)
+pure func (responder *Responder) transportKeysLabelingWithSnapAfterRecvFirstMsg(snap tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) bool {
+    return recvFirstTransportMsg(snap, ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()) &&
+        GetWgUsage().hasKirStructure(kirT) &&
+        kriT == tm.kdf2(tm.getInput(kirT)) && // we can use this to derive that they must have equal labels
+        GetWgLabeling().IsSecretRelaxed(snap, kirT, label.Readers(set[p.Id]{ responder.getAId(), responder.getBSessId() }), u.AeadKey(WgReceivingKey)) &&
+        GetWgLabeling().IsSecretRelaxed(snap, kriT, label.Readers(set[p.Id]{ responder.getAId(), responder.getBSessId() }), u.AeadKey(WgSendingKey)) &&
+        (corrupted ==> tr.containsCorruptId(getRecvFirstTransportMsg(snap, ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()).getCorruptIds(), set[p.Id]{ responder.getAId(), responder.getBSessId() })) &&
+        (!corrupted ==> GetWgLabeling().IsLabeledRelaxed(snap, kirT, label.Readers(set[p.Id]{ responder.getASessId(aSess), responder.getBSessId() })) &&
+            GetWgLabeling().IsLabeledRelaxed(snap, kriT, label.Readers(set[p.Id]{ responder.getASessId(aSess), responder.getBSessId() })))
+}
+
+ghost
+requires ResponderMem(responder)
+requires oldSnap.isSuffix(responder.Snapshot())
+requires responder.transportKeysLabelingWithSnapBeforeRecvFirstMsg(oldSnap, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.transportKeysLabelingBeforeRecvFirstMsg(epkIX, ekrT, kirT, kriT, aSess, corrupted)
+func (responder *Responder) transportKeysLabelingBeforeRecvFirstMsgMonotonic(oldSnap tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) {
+    curSnap := responder.Snapshot()
+    aId := responder.getAId()
+    aSessId := responder.getASessId(aSess)
+    bId := responder.getBId()
+    bSessId := responder.getBSessId()
+    aBSessL := label.Readers(set[p.Id]{ aId, bSessId })
+    aSessBSessL := label.Readers(set[p.Id]{ aSessId, bSessId })
+    GetWgLabeling().IsSecretRelaxedMonotonic(oldSnap, curSnap, kirT, aBSessL, u.AeadKey(WgReceivingKey))
+    GetWgLabeling().IsSecretRelaxedMonotonic(oldSnap, curSnap, kriT, aBSessL, u.AeadKey(WgSendingKey))
+    oldSnap.eventOccursMonotonic(curSnap, bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+    assert sentSidR(curSnap, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+    oldPrefix := getSentSidRPrefix(oldSnap, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    newPrefix := getSentSidRPrefix(curSnap, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    // the following lemma call derives that `oldPrefix.isSuffix(newPrefix)` holds:
+    getSentSidRPrefixTwice(oldSnap, curSnap, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    if oldPrefix != newPrefix {
+        // derive a contradiction here because the event is unique, thus oldPrefix == newPrefix
+        unfold ResponderMem(responder)
+        event := sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+        responder.llib.UniqueEventIsUnique(bId.getPrincipal(), event)
+        assert false // contradiction as expected
+    }
+    GetWgLabeling().IsLabeledMonotonic(oldSnap, curSnap, GetWgUsage().getDhStaticFromKir(kirT), Label_DhStatic(aId, bId))
+    GetWgLabeling().IsLabeledMonotonic(oldSnap, curSnap, GetWgUsage().getDhStaticEphemeral(kirT), Label_DhStaticEphemeral(aId, bSessId))
+}
+
+ghost
+requires ResponderMem(responder)
+requires oldSnap.isSuffix(responder.Snapshot())
+requires responder.transportKeysLabelingWithSnapAfterRecvFirstMsg(oldSnap, ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.transportKeysLabelingAfterRecvFirstMsg(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+func (responder *Responder) transportKeysLabelingAfterRecvFirstMsgMonotonic(oldSnap tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) {
+    curSnap := responder.Snapshot()
+    aId := responder.getAId()
+    aSessId := responder.getASessId(aSess)
+    bId := responder.getBId()
+    bSessId := responder.getBSessId()
+    aBSessL := label.Readers(set[p.Id]{ aId, bSessId })
+    aSessBSessL := label.Readers(set[p.Id]{ aSessId, bSessId })
+    recvFirstTransportMsgMonotonic(oldSnap, curSnap, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    oldPrefix := getRecvFirstTransportMsg(oldSnap, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    newPrefix := getRecvFirstTransportMsg(curSnap, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    // the following lemma call derives that `oldPrefix.isSuffix(newPrefix)` holds:
+    getRecvFirstTransportMsgTwice(oldSnap, curSnap, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    if oldPrefix != newPrefix {
+        // derive a contradiction here because the event is unique, thus oldPrefix == newPrefix
+        unfold ResponderMem(responder)
+        event := receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId)
+        responder.llib.UniqueEventIsUnique(bId.getPrincipal(), event)
+        assert false // contradiction as expected
+    }
+    GetWgLabeling().IsSecretRelaxedMonotonic(oldSnap, curSnap, kirT, aBSessL, u.AeadKey(WgReceivingKey))
+    GetWgLabeling().IsSecretRelaxedMonotonic(oldSnap, curSnap, kriT, aBSessL, u.AeadKey(WgSendingKey))
+    if !corrupted {
+        GetWgLabeling().IsLabeledRelaxedMonotonic(oldSnap, curSnap, kirT, aSessBSessL)
+        GetWgLabeling().IsLabeledRelaxedMonotonic(oldSnap, curSnap, kriT, aSessBSessL)
+    }
+}
+
+
+// secrecy
+ghost
+requires ResponderMem(responder)
+requires responder.transportKeysLabelingBeforeRecvFirstMsg(epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.transportKeysLabelingBeforeRecvFirstMsg(epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  transportKeysWeakForwardSecrecy(responder.Snapshot(), epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+func (responder *Responder) ProveWeakForwardSecret(epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) {
+    aId := responder.getAId()
+	aSessId := responder.getASessId(aSess)
+	bId := responder.getBId()
+	bSessId := responder.getBSessId()
+    snap := responder.Snapshot()
+    prefix := getSentSidRPrefix(snap, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+
+    if !corrupted && GetWgLabeling().IsPublishable(snap, kirT) {
+        GetWgLabeling().IsLabeledRelaxedMonotonic(prefix, snap, kirT, label.Readers(set[p.Id]{ aSessId, bSessId }))
+	    GetWgLabeling().IsLabeledRelaxedMonotonic(prefix, snap, kriT, label.Readers(set[p.Id]{ aSessId, bSessId }))
+		GetWgLabeling().PublishableImpliesCorruption(snap, kirT, label.Readers(set[p.Id]{ aSessId, bSessId }))
+		GetWgLabeling().PublishableImpliesCorruption(snap, kriT, label.Readers(set[p.Id]{ aSessId, bSessId }))
+	}
+
+    if att.attackerKnows(snap, kirT) {
+		unfold ResponderMem(responder)
+		responder.llib.AttackerOnlyKnowsPublishableValues(kirT)
+		fold ResponderMem(responder)
+	}
+	if att.attackerKnows(snap, kriT) {
+		unfold ResponderMem(responder)
+		responder.llib.AttackerOnlyKnowsPublishableValues(kriT)
+		fold ResponderMem(responder)
+	}
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func transportKeysWeakForwardSecrecy(snapshot tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) bool {
+    return sentSidR(snapshot, epkIX, ekrT, kirT, kriT, aSessId, bSessId) &&
+        ll.ForwardSecrecy(
+            snapshot,
+            getSentSidRPrefix(snapshot, epkIX, ekrT, kirT, kriT, aSessId, bSessId),
+            kirT,
+            set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() },
+            set[p.Id]{ aSessId, bSessId }) &&
+        ll.ForwardSecrecy(
+            snapshot,
+            getSentSidRPrefix(snapshot, epkIX, ekrT, kirT, kriT, aSessId, bSessId),
+            kriT,
+            set[p.Id]{ aSessId.getPrincipalId(), bSessId.getPrincipalId() },
+            set[p.Id]{ aSessId, bSessId })
+}
+
+ghost
+requires ResponderMem(responder)
+requires responder.transportKeysLabelingAfterRecvFirstMsg(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.transportKeysLabelingAfterRecvFirstMsg(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+ensures  transportKeysStrongForwardSecrecy(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+func (responder *Responder) ProveStrongForwardSecret(ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) {
+    aId := responder.getAId()
+	aSessId := responder.getASessId(aSess)
+	bId := responder.getBId()
+	bSessId := responder.getBSessId()
+    snap := responder.Snapshot()
+    prefix := getRecvFirstTransportMsg(snap, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+
+    if corrupted {
+        assert set[p.Id]{ aId } union set[p.Id]{ bSessId } == set[p.Id]{ aId, bSessId }
+        GetWgLabeling().containsCorruptIdSplit(prefix.getCorruptIds(), set[p.Id]{ aId }, set[p.Id]{ bSessId })
+        if tr.containsCorruptId(prefix.getCorruptIds(), set[p.Id]{ bSessId }) {
+            prefix.getCorruptIdsMonotonic(snap)
+            GetWgLabeling().containsCorruptIdMonotonic2(prefix.getCorruptIds(), snap.getCorruptIds(), set[p.Id]{ bSessId })
+            GetWgLabeling().containsCorruptIdUnion(snap.getCorruptIds(), set[p.Id]{ aSessId }, set[p.Id]{ bSessId })
+            assert set[p.Id]{ aSessId } union set[p.Id]{ bSessId } == set[p.Id]{ aSessId, bSessId }
+        }
+    } else if !corrupted && GetWgLabeling().IsPublishable(snap, kirT) {
+        // this implies that kriT is also publishable
+        GetWgLabeling().PublishableImpliesCorruption(snap, kirT, label.Readers(set[p.Id]{ aSessId, bSessId }))
+		GetWgLabeling().PublishableImpliesCorruption(snap, kriT, label.Readers(set[p.Id]{ aSessId, bSessId }))
+    }
+
+    if att.attackerKnows(snap, kirT) {
+		unfold ResponderMem(responder)
+		responder.llib.AttackerOnlyKnowsPublishableValues(kirT)
+		fold ResponderMem(responder)
+	}
+	if att.attackerKnows(snap, kriT) {
+		unfold ResponderMem(responder)
+		responder.llib.AttackerOnlyKnowsPublishableValues(kriT)
+		fold ResponderMem(responder)
+	}
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func transportKeysStrongForwardSecrecy(snapshot tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) bool {
+    return recvFirstTransportMsg(snapshot, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId) &&
+        ll.ForwardSecrecy(
+            snapshot,
+            getRecvFirstTransportMsg(snapshot, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId),
+            kirT,
+            set[p.Id]{ aSessId.getPrincipalId() },
+            set[p.Id]{ aSessId, bSessId }) &&
+        ll.ForwardSecrecy(
+            snapshot,
+            getRecvFirstTransportMsg(snapshot, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId),
+            kriT,
+            set[p.Id]{ aSessId.getPrincipalId() },
+            set[p.Id]{ aSessId, bSessId })
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func sentSidR(snapshot tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) bool {
+    return snapshot.eventOccurs(bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+requires sentSidR(snapshot, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  res.isSuffix(snapshot)
+ensures  res.isEventAt(bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+pure func getSentSidRPrefix(snapshot tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) (res tr.TraceEntry) {
+    return snapshot.eventOccursWitness(bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires t0.isSuffix(t1)
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+requires sentSidR(t0, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  sentSidR(t1, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  getSentSidRPrefix(t0, epkIX, ekrT, kirT, kriT, aSessId, bSessId).isSuffix(getSentSidRPrefix(t1, epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+/** lemma stating that the results of `getSentSidRPrefix` for two snapshots t0, t1 maintains the suffix relation */
+func getSentSidRPrefixTwice(t0, t1 tr.TraceEntry, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) {
+    t0.eventOccursMonotonic(t1, bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+    if t0 != t1 {
+        if t1.isEventAt(bSessId.getPrincipal(), sendSidREv(epkIX, ekrT, kirT, kriT, aSessId, bSessId)) {
+            t0Res := getSentSidRPrefix(t0, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+            t0Res.isSuffixTransitive(t0, t1)
+        } else {
+            getSentSidRPrefixTwice(t0, tr.getPrev(t1), epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+        }
+    }
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) ev.Event {
+    return sendFirstInitEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId)
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func isFirstMsgSent(snapshot tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) bool {
+    return snapshot.eventOccurs(aSessId.getPrincipal(), sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+requires isFirstMsgSent(snapshot, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  res.isSuffix(snapshot)
+ensures  res.isEventAt(aSessId.getPrincipal(), sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+pure func getFirstMsgSentPrefix(snapshot tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) (res tr.TraceEntry) {
+    return snapshot.eventOccursWitness(aSessId.getPrincipal(), sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+pure func recvFirstTransportMsg(snapshot tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) bool {
+    return snapshot.eventOccurs(bSessId.getPrincipal(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires t0.isSuffix(t1)
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+requires recvFirstTransportMsg(t0, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  recvFirstTransportMsg(t1, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+func recvFirstTransportMsgMonotonic(t0, t1 tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) {
+    t0.eventOccursMonotonic(t1, bSessId.getPrincipal(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+requires recvFirstTransportMsg(snapshot, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  res.isSuffix(snapshot)
+ensures  res.isEventAt(bSessId.getPrincipal(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId))
+pure func getRecvFirstTransportMsg(snapshot tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) (res tr.TraceEntry) {
+    return snapshot.eventOccursWitness(bSessId.getPrincipal(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId))
+}
+
+ghost
+requires t0.isSuffix(t1)
+requires aSessId.getSession() != none[uint32]
+requires bSessId.getSession() != none[uint32]
+requires recvFirstTransportMsg(t0, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  recvFirstTransportMsg(t1, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+ensures  getRecvFirstTransportMsg(t0, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId).isSuffix(getRecvFirstTransportMsg(t1, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId))
+/** lemma stating that the results of `getRecvFirstTransportMsg` for two snapshots t0, t1 maintains the suffix relation */
+func getRecvFirstTransportMsgTwice(t0, t1 tr.TraceEntry, ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSessId, bSessId p.Id) {
+    recvFirstTransportMsgMonotonic(t0, t1, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    if t0 != t1 {
+        if t1.isEventAt(bSessId.getPrincipal(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId)) {
+            t0Res := getRecvFirstTransportMsg(t0, ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+            t0Res.isSuffixTransitive(t0, t1)
+        } else {
+            getRecvFirstTransportMsgTwice(t0, tr.getPrev(t1), ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+        }
+    }
+}
+
+
+// authentication
+ghost
+requires acc(ResponderMem(responder), _)
+pure func (responder *Responder) NonInjectiveAgreementWithKCIResistance(aSessId, bSessId p.Id, commit, running ev.Event) bool {
+    return unfolding acc(ResponderMem(responder), _) in responder.llib.NonInjectiveAgreement(bSessId.getPrincipal(), aSessId.getPrincipal(), commit, running, set[p.Id]{ aSessId.getPrincipalId(), bSessId })
+}
+
+ghost
+requires acc(ResponderMem(responder), _)
+pure func (responder *Responder) InjectiveAgreementWithKCIResistance(aSessId, bSessId p.Id, commit, running ev.Event) bool {
+    return unfolding acc(ResponderMem(responder), _) in responder.llib.InjectiveAgreement(bSessId.getPrincipal(), aSessId.getPrincipal(), commit, running, set[p.Id]{ aSessId.getPrincipalId(), bSessId })
+}
+
+ghost
+decreases
+requires ResponderMem(responder)
+requires recvFirstTransportMsg(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.NonInjectiveAgreementWithKCIResistance(responder.getASessId(aSess), responder.getBSessId(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()))
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(getRecvFirstTransportMsg(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()).getCorruptIds(), set[p.Id]{ responder.getAId(), responder.getBSessId() })
+ensures  optCorruptedId != none[p.Id] ==>
+    (get(optCorruptedId) == responder.getAId() || get(optCorruptedId) == responder.getBSessId())
+func (responder *Responder) ProveNonInjectiveAgreement(ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) (optCorruptedId option[p.Id]) {
+	aId := responder.getAId()
+    aSessId := responder.getASessId(aSess)
+    bSessId := responder.getBSessId()
+    commitEv := receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId)
+    runningEv := sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT, aSessId, bSessId)
+    unfold ResponderMem(responder)
+    commitEvWitness := responder.llib.EventOccursImpliesEventInv(bSessId.getPrincipal(), commitEv)
+    if tr.containsCorruptId(commitEvWitness.getCorruptIds(), set[p.Id]{ aId, bSessId }) {
+        assert set[p.Id]{ aId, bSessId } == set[p.Id]{ aId } union set[p.Id]{ bSessId }
+        GetWgLabeling().containsCorruptIdSplit(commitEvWitness.getCorruptIds(), set[p.Id]{ aId }, set[p.Id]{ bSessId })
+        if tr.containsCorruptId(commitEvWitness.getCorruptIds(), set[p.Id]{ aId }) {
+		    optCorruptedId = some(aId)
+	    } else {
+            optCorruptedId = some(bSessId)
+        }
+	}
+    fold ResponderMem(responder)
+}
+
+ghost
+decreases
+requires ResponderMem(responder)
+requires recvFirstTransportMsg(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId())
+ensures  ResponderMem(responder)
+ensures  responder.ImmutableState() == old(responder.ImmutableState())
+ensures  old(responder.Snapshot()) == responder.Snapshot()
+ensures  responder.InjectiveAgreementWithKCIResistance(responder.getASessId(aSess), responder.getBSessId(), receivedFirstRespEv(ekiT, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()), sentFirstMsgEv(ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()))
+// the following postcondition provides further insights about the returned witness:
+ensures (optCorruptedId != none[p.Id]) == tr.containsCorruptId(getRecvFirstTransportMsg(responder.Snapshot(), ekiT, epkIX, ekrT, kirT, kriT, responder.getASessId(aSess), responder.getBSessId()).getCorruptIds(), set[p.Id]{ responder.getAId(), responder.getBSessId() })
+ensures  optCorruptedId != none[p.Id] ==>
+    (get(optCorruptedId) == responder.getAId() || get(optCorruptedId) == responder.getBSessId())
+func (responder *Responder) ProveInjectiveAgreementWithKCIResistance(ekiT, epkIX, ekrT, kirT, kriT tm.Term, aSess uint32, corrupted bool) (optCorruptedId option[p.Id]) {
+    aSessId := responder.getASessId(aSess)
+    bSessId := responder.getBSessId()
+    optCorruptedId = responder.ProveNonInjectiveAgreement(ekiT, epkIX, ekrT, kirT, kriT, aSess, corrupted)
+	commitEv := receivedFirstRespEv(ekiT, ekrT, kirT, kriT, aSessId, bSessId)
+	unfold ResponderMem(responder)
+    responder.llib.EventOccursImpliesEventInv(bSessId.getPrincipal(), commitEv)
+    if optCorruptedId == none[p.Id] {
+        responder.llib.UniqueEventIsUnique(bSessId.getPrincipal(), commitEv)
+	}
+    fold ResponderMem(responder)
+}

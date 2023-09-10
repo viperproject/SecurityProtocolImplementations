@@ -1,0 +1,26 @@
+#ifndef EVENT_FUNCTIONS
+#define EVENT_FUNCTIONS
+
+#include "event.gh"
+#include "protocol_specific_definitions.gh"
+#include "trace_entry.gh"
+
+fixpoint bool eventConsistency(EventParams t, int type) CONSISTENCY
+
+fixpoint bool event_pure_pred(ParameterizedEvent e, int principal, trace<EventParams> tr) EVENT_PRED
+
+fixpoint bool event_pure_pred_consistent(ParameterizedEvent e, int principal, Trace tr) {
+    switch (e) {
+        case newEvent(type, params):
+            return eventConsistency(params, type) && event_pure_pred(e, principal, tr);
+    }
+}
+
+fixpoint bool isUnique(int type) UNIQUE
+
+// protocol implementations have to provide an implementation for this 
+// function to map (the parameters of) each event to a particular uniqueness witness, 
+// which is typically one of the event parameters
+fixpoint Term eventUniquenessWitness<t>(ParameterizedEvent e) UNIQUE_WITNESS
+
+#endif

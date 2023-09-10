@@ -1,0 +1,37 @@
+#ifndef EVENT_LEMMAS
+#define EVENT_LEMMAS
+
+#include "event.gh"
+#include "event_functions.gh"
+#include "trace_entry.gh"
+#include "trace_entry_helpers.gh"
+#include "trace_invariant.gh"
+
+// This module proves important lemmas about events. Most importantly,
+// we prove the UniqueEventsAreUnique lemma, which shows that there if a
+// event is unique, there is only one of it on the trace.
+
+// lemma that proves that having 2 instances of `eventUniqueResource` results in a contradiction
+lemma void eventUniqueContradiction(Term witness, int eventType);
+    requires isUnique(eventType) == true &*&
+        EventUniqueResource(witness, eventType) &*& EventUniqueResource(witness, eventType);
+    ensures false;
+
+lemma void eventPurePredConsistentMonotonic<t>(trace<EventParams> t1, trace<EventParams> t2, int principal, ParameterizedEvent e, PkePred pkePred);
+    requires isSuffix(t1, t2) == true &*& event_pure_pred_consistent(e,principal, t1) == true &*& PkeCtxt(pkePred);
+    ensures event_pure_pred_consistent(e,principal, t2) == true &*& PkeCtxt(pkePred);
+
+lemma void uniqueEventsAreUniqueAtInternal(Trace globalTrace, Trace snapshot, int principal1, int principal2, ParameterizedEvent e1, ParameterizedEvent e2, int idx1, int idx2);
+    requires valid_trace(globalTrace, ?pkePred) &*&
+        isSuffix(snapshot, globalTrace) == true &*&
+        eventOccursAt(snapshot, principal1, e1, idx1) == true &*&
+        eventOccursAt(snapshot, principal2, e2, idx2) == true &*&
+        isUnique(getEventType(e1)) == true &*&
+        eventUniquenessWitness(e1) == eventUniquenessWitness(e2) &*&
+        getEventType(e1) == getEventType(e2);
+    ensures  valid_trace(globalTrace, pkePred) &*&
+        principal1 == principal2 &*&
+        e1 == e2 &*&
+        idx1 == idx2;
+
+#endif

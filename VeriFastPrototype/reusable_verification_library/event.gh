@@ -1,0 +1,23 @@
+#ifndef EVENT_DEF
+#define EVENT_DEF
+
+#include "protocol_specific_event_params.gh"
+
+#define ParameterizedEvent EventAdt<EventParams>
+
+inductive EventParams = EVENT_PARAMS
+inductive EventAdt<t> = newEvent(int type, t params);
+
+fixpoint int getEventType<t>(EventAdt<t> e) {
+    switch(e) {
+        case newEvent(type, params): return type;
+    }
+}
+
+fixpoint t getEventParams<t>(EventAdt<t> e) {
+    switch(e) {
+        case newEvent(type, params): return params;
+    }
+}
+
+#endif
