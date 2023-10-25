@@ -31,7 +31,7 @@ jobs:
         with:
           context: .
           load: true
-          file: casestudies/docker/Dockerfile
+          file: docker/Dockerfile
           tags: ${{ env.IMAGE_TAG }}
           labels: "runnumber=${{ github.run_id }}"
           push: false
@@ -56,7 +56,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: casestudies/wireguard/docker/Dockerfile
+          file: docker/Dockerfile
           tags: ${{ env.IMAGE_TAG }}
           labels: "runnumber=${{ github.run_id }}"
           push: true
