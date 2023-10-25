@@ -1,9 +1,14 @@
 #!/bin/bash
 
-source ./compile.sh
+# exit when any command fails
+set -e
+
+scriptDir=$(dirname "$0")
+
+source "$scriptDir/compile.sh"
 
 function initiator() {
-    echo -e "Hello\nWorld!\n" | ./wireguard-gobra \
+    echo -e "Hello\nWorld!\n" | "$scriptDir/wireguard-gobra" \
         --interfaceName utun10 \
         --privateKey YIQ1ZXYUVs6OjE2GjDhJgAqoJDaPPdReVtSQ1zOy7n8= \
         --publicKey Y1842DzWWfqP42p9SJNoX1fEJdTOkuyi/fx+1Y7aFU4= \
@@ -15,7 +20,7 @@ function initiator() {
 }
 
 function responder() {
-    echo -e "Hello back\nI'm the responder\n" | ./wireguard-gobra \
+    echo -e "Hello back\nI'm the responder\n" | "$scriptDir/wireguard-gobra" \
         --interfaceName utun8 \
         --privateKey oCxC44w/QKqastjiex7OTiKCfJphexquZ3MmJE5upU0= \
         --publicKey poKDYnMyFZWkSwGlAXXb79nh0L8rEb+S8XWAtXQxsmc= \

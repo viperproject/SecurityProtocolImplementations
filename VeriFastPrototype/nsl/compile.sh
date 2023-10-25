@@ -50,6 +50,6 @@ C_FILES=($TMP_DIR/*.c)
 C_FILES_STR=$(printf "%s " "${C_FILES[@]}")
 
 # compile initiator and responder
-gcc $C_FILES_STR -iquote $VERIFAST_BIN -lcrypto -o nsl
+gcc $C_FILES_STR -iquote $VERIFAST_BIN -lcrypto -lpthread -o $SCRIPT_DIR/nsl
 
 rm -r $TMP_DIR
