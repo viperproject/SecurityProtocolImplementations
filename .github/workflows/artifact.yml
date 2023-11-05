@@ -23,20 +23,22 @@ jobs:
           VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
           [ "$VERSION" == "main" ] && VERSION=latest
           echo "IMAGE_TAG=${{ env.IMAGE_ID }}:$VERSION" >> $GITHUB_ENV
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          load: true
-          file: docker/Dockerfile
-          tags: ${{ env.IMAGE_TAG }}
-          labels: "runnumber=${{ github.run_id }}"
-          push: false
-          cache-from: type=gha, scope=${{ github.workflow }}
-          cache-to: type=gha, scope=${{ github.workflow }}
+      # - name: Build image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     load: true
+      #     file: docker/Dockerfile
+      #     tags: ${{ env.IMAGE_TAG }}
+      #     labels: "runnumber=${{ github.run_id }}"
+      #     push: false
+      #     cache-from: type=gha, scope=${{ github.workflow }}
+      #     cache-to: type=gha, scope=${{ github.workflow }}
 
       # - name: Test NSL
       #   run: docker run --entrypoint "/bin/bash" ${{ env.IMAGE_TAG }} -c "cp -r Go-orig/. Go/; cp -r C-orig/. C/; /gobra/test-nsl.sh"
@@ -79,13 +81,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/Dockerfile
           tags: ${{ env.IMAGE_TAG }}
           labels: "runnumber=${{ github.run_id }}"
-          platforms: linux/amd64,linux/arm64/v8
+          # platforms: linux/amd64,linux/arm64/v8
+          platforms: linux/arm64/v8
           push: true
           cache-from: type=gha, scope=${{ github.workflow }}
           cache-to: type=gha, scope=${{ github.workflow }}
