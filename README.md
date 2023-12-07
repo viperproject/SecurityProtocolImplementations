@@ -1,6 +1,5 @@
 # A Generic Methodology for the Modular Verification of Security Protocol Implementations
 
-[![Artifact DOI](https://zenodo.org/badge/doi/10.5281/zenodo.8330913.svg)](https://doi.org/10.5281/zenodo.8330913)
 [![Artifact](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/artifact.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/artifact.yml?query=branch%3Amain)
 
 [![Reusable Verification Library](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/library.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/library.yml?query=branch%3Amain)
@@ -12,19 +11,27 @@
 [![NSL Case Study for VeriFast](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/verifast-nsl.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/verifast-nsl.yml?query=branch%3Amain)
 
 This is the artifact for the paper "A Generic Methodology for the Modular Verification of Security Protocol Implementations", published at ACM CCS '23 [[published version]](https://doi.org/10.1145/3576915.3623105) [[extended version]](https://arxiv.org/abs/2212.02626).
-This artifact has been archived on Zenodo (DOI: [10.5281/zenodo.8330913](https://doi.org/10.5281/zenodo.8330913)) and can be cited as follows (for BibTeX):
-```
-@misc{ArquintSchwerhoffMehtaMuellerArtifact23,
-	author = {Linard Arquint and Malte Schwerhoff and Vaibhav Mehta and Peter M{\"{u}}ller},
-	publisher = {Zenodo},
-	title = {A Generic Methodology for the Modular Verification of Security Protocol Implementations},
-	month = dec,
-	year = 2023,
-	publisher = {Zenodo},
-	version = {v1.1.0},
-	doi = {10.5281/zenodo.8330913},
-	url = {https://doi.org/10.5281/zenodo.8330913},
-	note = {Artifact containing the reusable verification libraries and the case studies.}
+This artifact has been archived on Zenodo (DOI: [10.5281/zenodo.8330913](https://doi.org/10.5281/zenodo.8330913)). The paper can be cited as follows (for BibTeX):
+```BibTex
+@InProceedings{ArquintSchwerhoffMehtaMueller23,
+  author = {Arquint, Linard and Schwerhoff, Malte and Mehta, Vaibhav and M\"uller, Peter},
+  title = {A Generic Methodology for the Modular Verification of Security Protocol Implementations},
+  year = {2023},
+  isbn = {9798400700507},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  booktitle = {Proceedings of the 2023 ACM SIGSAC Conference on Computer and Communications Security},
+  pages = {1377-1391},
+  numpages = {15},
+  keywords = {protocol implementation verification, symbolic security, separation logic, automated verification, injective agreement, forward secrecy},
+  location = {Copenhagen, Denmark},
+  series = {CCS '23},
+  doi = {10.1145/3576915.3623105},
+  url = {https://doi.org/10.1145/3576915.3623105},
+  urltext = {Publisher},
+  url1 = {https://pm.inf.ethz.ch/publications/ArquintSchwerhoffMehtaMueller23.pdf},
+  url1text = {PDF},
+  abstract = {Security protocols are essential building blocks of modern IT systems. Subtle flaws in their design or implementation may compromise the security of entire systems. It is, thus, important to prove the absence of such flaws through formal verification. Much existing work focuses on the verification of protocol *models*, which is not sufficient to show that their *implementations* are actually secure. Verification techniques for protocol implementations (e.g., via code generation or model extraction) typically impose severe restrictions on the used programming language and code design, which may lead to sub-optimal implementations. In this paper, we present a methodology for the modular verification of strong security properties directly on the level of the protocol implementations. Our methodology leverages state-of-the-art verification logics and tools to support a wide range of implementations and programming languages. We demonstrate its effectiveness by verifying memory safety and security of Go implementations of the Needham-Schroeder-Lowe, Diffie-Hellman key exchange, and WireGuard protocols, including forward secrecy and injective agreement for WireGuard. We also show that our methodology is agnostic to a particular language or program verifier with a prototype implementation for C.}
 }
 ```
 
