@@ -1,5 +1,6 @@
 # A Generic Methodology for the Modular Verification of Security Protocol Implementations
 
+[![Artifact DOI](https://zenodo.org/badge/doi/10.5281/zenodo.8330913.svg)](https://doi.org/10.5281/zenodo.8330913)
 [![Artifact](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/artifact.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/artifact.yml?query=branch%3Amain)
 
 [![Reusable Verification Library](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/library.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/library.yml?query=branch%3Amain)
@@ -10,6 +11,22 @@
 [![WireGuard Case Study](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/wireguard.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/wireguard.yml?query=branch%3Amain)
 [![NSL Case Study for VeriFast](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/verifast-nsl.yml/badge.svg?branch=main)](https://github.com/viperproject/SecurityProtocolImplementations/actions/workflows/verifast-nsl.yml?query=branch%3Amain)
 
+This is the artifact for the paper "A Generic Methodology for the Modular Verification of Security Protocol Implementations", published at ACM CCS '23 [[published version]](https://doi.org/10.1145/3576915.3623105) [[extended version]](https://arxiv.org/abs/2212.02626).
+This artifact has been archived on Zenodo (DOI: [10.5281/zenodo.8330913](https://doi.org/10.5281/zenodo.8330913)) and can be cited as follows (for BibTeX):
+```
+@misc{ArquintSchwerhoffMehtaMuellerArtifact23,
+	author = {Linard Arquint and Malte Schwerhoff and Vaibhav Mehta and Peter M{\"{u}}ller},
+	publisher = {Zenodo},
+	title = {A Generic Methodology for the Modular Verification of Security Protocol Implementations},
+	month = dec,
+	year = 2023,
+	publisher = {Zenodo},
+	version = {v1.1.0},
+	doi = {10.5281/zenodo.8330913},
+	url = {https://doi.org/10.5281/zenodo.8330913},
+	note = {Artifact containing the reusable verification libraries and the case studies.}
+}
+```
 
 ## Structure
 - `ReusableVerificationLibrary` contains the Gobra sources that constitute the Reusable Verification Library
@@ -19,8 +36,8 @@
 - `VeriFastPrototype` contains the C sources of our prototype for VeriFast. The prototype demonstrates that (1) a concurrent data structure can be built on top of VeriFast's built-in mutex offering the same local snapshots as our Reusable Verification Library, (2) a parameterized trace invariant in the form of a separation logic predicate can be defined, and (3) several lemmas, such as the uniqueness of events or the secrecy lemma, can be proven using the trace invariant. Furthermore, implementations in C of the NSL initiator & responder demonstrate that we can instantiate and use the Reusable Verification Library for VeriFast to prove secrecy and injective agreement, i.e., the same security properties as for the implementation in Go using Gobra.
 
 
-## Artifact
-The artifact includes both reusable verification libraries and all case studies. Furthermore, it contains all dependencies to compile and verify the libraries and case studies.
+## Artifact Docker image
+The artifact docker image includes both reusable verification libraries and all case studies. Furthermore, it contains all dependencies to compile and verify the libraries and case studies.
 
 ### Set-up
 We require an installation of Docker. The following steps have been tested on macOS 14.0 with the latest version of Docker Desktop, which is at time of writing 4.24.2 and comes with version 24.0.6 of the Docker CLI.
@@ -54,3 +71,5 @@ The Docker image provides several ready-to-use scripts in the `/gobra` directory
 - `test-dh.sh`: Compiles and executes the DH case study in Go and prints the shared DH secrets computed by the initiator and responder. 
 - `test-wireguard.sh`: Compiles and executes the WireGuard case study in Go, which establishes a VPN connection and exchanges some ASCII messages.
 - `test-c-nsl.sh`: Compiles and executes the NSL case study in C and prints the random numbers obtained by the initiator and responder. 
+
+Maintainer: [Linard Arquint](https://linardarquint.com)
