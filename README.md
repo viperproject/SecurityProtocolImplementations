@@ -50,7 +50,7 @@ The artifact docker image includes both reusable verification libraries and all 
 We require an installation of Docker. The following steps have been tested on macOS 14.0 with the latest version of Docker Desktop, which is at time of writing 4.24.2 and comes with version 24.0.6 of the Docker CLI.
 
 #### Installation
-- We recommend to adapt the Docker settings to provide sufficient resources to Docker. We have tested our artifact on a 2019 16-inch MacBook Pro with 2.3 GHz 8-Core Intel Core i9 running macOS Sonoma 14.0 and configured Docker to allocate up 16 cores (which includes 8 virtual cores), 6 GB of memory, and 1 GB of swap memory.
+- We recommend to adapt the Docker settings to provide sufficient resources to Docker. We have tested our artifact on a 2019~16-inch MacBook Pro with 2.3~GHz 8-Core Intel Core i9 running macOS Sonoma~14.0 and configured Docker to allocate up 16~cores (which includes 8~virtual cores), 6~GB of memory, and 1~GB of swap memory. In case you are using an ARM-based Mac, enable the option "Use Rosetta for x86/amd64 emulation on Apple Silicon" in the Docker Desktop Settings, which is available on macOS~13 or newer. Measurements on an Apple M1~Pro Silicon have shown that performing this additional emulation results in 20-25\% longer verification times compared to those reported in the remainder of this artifact appendix.
 - Navigate to a convenient folder, in which directories can be created for the purpose of running this artifact.
 - Open a shell at this folder location.
 - Create two new folders named `Go-sync` and `C-sync` by executing:
@@ -59,10 +59,11 @@ We require an installation of Docker. The following steps have been tested on ma
     ```
 - Download and start the Docker image containing our artifact by executing the following command:
     ```
-    docker run -it --volume $PWD/C-sync:/gobra/C --volume $PWD/Go-sync:/gobra/Go ghcr.io/viperproject/securityprotocolimplementations-artifact:latest
+    docker run -it --platform linux/amd64 --volume $PWD/C-sync:/gobra/C --volume $PWD/Go-sync:/gobra/Go ghcr.io/viperproject/securityprotocolimplementations-artifact:latest
     ```
-	Note that this command results in the Docker container writing files to the two folders `Go-sync` and `C-sync` on your host machine.
-	Thus, make sure that these folders are indeed empty and previous modifications that you have made to files in these folders have been saved elsewhere!
+    > ⚠️
+    > Note that this command results in the Docker container writing files to the two folders `Go-sync` and `C-sync` on your host machine.
+    > Thus, make sure that these folders are indeed empty and previous modifications that you have made to files in these folders have been saved elsewhere!
 - The Docker command above not only starts a Docker container and provides you with a shell within this container but it also synchronizes all files constituting our artifact with the two folders `Go-sync` and `C-sync` on your host machine. I.e., the local folders `Go-sync` and `C-sync` are synchronized with `/gobra/Go` and `/gobra/C` within the Docker container, respectively.
 
 #### Usage
