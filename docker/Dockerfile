@@ -1,28 +1,46 @@
 # Gobra commit f21fe70
 FROM ghcr.io/viperproject/gobra@sha256:0e7419455a3648d006e8a9957380e94c1a8e52d2d4b1ce2425af852dc275fb29
 
-RUN apt-get update && \
-	apt-get install -y \
-    curl \
-    gcc \
-    wget \
-    jq \
-    build-essential \
-    checkinstall \
-    zlib1g-dev
+FROM alpine/openssl
+COPY --from=0 /gobra/gobra.jar /gobra/gobra.jar
+
+# RUN apt-get update && \
+# 	apt-get install -y \
+#     curl \
+#     gcc \
+#     wget \
+#     jq \
+#     git \
+#     openjdk-11-jdk \
+#     python
+RUN apk update && \
+    apk add \
+        curl \
+        gcc \
+        wget \
+        jq \
+        git \
+        # openjdk-11-jdk \
+        openjdk11 \
+        python3
+#    build-essential \
+#    checkinstall \
+#    zlib1g-dev
 
 # install openssl
-RUN mkdir tmp && \
-    cd tmp && \
-    wget https://www.openssl.org/source/openssl-3.1.3.tar.gz && \
-    tar xvf openssl-3.1.3.tar.gz && \
-    cd openssl-3.1.3 && \
-    ./config && \
-    make && \
-    make install && \
-    ldconfig && \
-    cd ../../ && \
-    rm -rf tmp
+# RUN mkdir tmp && \
+#     cd tmp && \
+#     wget https://www.openssl.org/source/openssl-3.1.3.tar.gz && \
+#     tar xvf openssl-3.1.3.tar.gz && \
+#     cd openssl-3.1.3 && \
+#     ./config && \
+#     make && \
+#     make install && \
+#     ldconfig && \
+#     cd ../../ && \
+#     rm -rf tmp
+
+WORKDIR /gobra
 
 # install go
 RUN mkdir tmp && \
@@ -31,6 +49,49 @@ RUN mkdir tmp && \
     rm -rf /usr/local/go && tar -C /usr/local -xzf go1.17.3.linux-amd64.tar.gz && \
     cd ../ && \
     rm -rf tmp
+
+RUN gcc --version
+
+# # Install Z3
+# RUN mkdir tmp && \
+#     cd tmp && \
+#     git clone https://github.com/Z3Prover/z3 && \
+#     cd z3 && \
+#     git checkout z3-4.8.7 && \
+#     CPPFLAGS="-march=native" CXXFLAGS="-march=native" CXX=gcc python scripts/mk_make.py --optimize && \
+#     cd build && \
+#     make install && \
+#     cd ../../../ && \
+#     rm -rf tmp
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        Z3_URL="https://github.com/viperproject/boogie-builder/raw/master/prebuilt_z3/z3-4.8.7-arm64-osx.zip" && \
+        curl -L $Z3_URL --output /z3.zip && \
+        unzip /z3.zip -d /z3/ && \
+        rm /z3.zip && \
+        cp /z3/$Z3_BIN /usr/bin/ && \
+        rm -r /z3; \
+    else \
+        Z3_URL="https://github.com/Z3Prover/z3/releases/download/z3-4.8.7/z3-4.8.7-x64-ubuntu-16.04.zip" && \
+        Z3_BIN="z3-4.8.7-x64-ubuntu-16.04/bin/z3" && \
+        curl -L $Z3_URL --output /z3.zip && \
+        unzip /z3.zip -d /z3/ && \
+        rm /z3.zip && \
+        cp /z3/$Z3_BIN /usr/bin/ && \
+        rm -r /z3; \
+    fi;
+
+# # path to z3 binary unzipping Z3_ZIP:
+# ENV Z3_BIN="z3-4.8.7-x64-ubuntu-16.04/bin/z3"
+
+
+# # download z3 release from GitHub, unzip, and copy to bin:
+# RUN curl -L $Z3_URL --output /z3.zip && \
+#     unzip /z3.zip -d /z3/ && \
+#     rm /z3.zip && \
+#     cp /z3/$Z3_BIN /usr/bin/ && \
+#     rm -r /z3
+
+ENV Z3_EXE /usr/bin/z3
 
 # add Go to path:
 ENV PATH="${PATH}:/usr/local/go/bin"
